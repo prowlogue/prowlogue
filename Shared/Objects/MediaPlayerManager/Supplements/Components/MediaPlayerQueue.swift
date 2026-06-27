@@ -21,6 +21,11 @@ protocol MediaPlayerQueue: ObservableObject, MediaPlayerObserver, MediaPlayerSup
     var hasPreviousItemPublisher: Published<Bool>.Publisher { get set }
     var nextItemPublisher: Published<MediaPlayerItemProvider?>.Publisher { get set }
     var previousItemPublisher: Published<MediaPlayerItemProvider?>.Publisher { get set }
+
+    /// When true, the player auto-advances to `nextItem` at the end of an item EVEN IF the server's
+    /// `enableNextEpisodeAutoPlay` setting is off. Used by explicit modes (e.g. shuffle) that must keep
+    /// advancing until the user exits. Default: false.
+    var forcesAutoAdvance: Bool { get }
 }
 
 extension MediaPlayerQueue {
@@ -31,6 +36,10 @@ extension MediaPlayerQueue {
 
     var hasPreviousItem: Bool {
         previousItem != nil
+    }
+
+    var forcesAutoAdvance: Bool {
+        false
     }
 }
 
@@ -59,6 +68,10 @@ class AnyMediaPlayerQueue: MediaPlayerQueue {
 
     var id: String {
         wrapped.id
+    }
+
+    var forcesAutoAdvance: Bool {
+        wrapped.forcesAutoAdvance
     }
 
     weak var manager: MediaPlayerManager? {

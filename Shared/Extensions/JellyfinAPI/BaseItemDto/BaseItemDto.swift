@@ -258,16 +258,18 @@ extension BaseItemDto {
 
     // MARK: Calculations
 
-    var runTimeLabel: String? {
-        let timeHMSFormatter: DateComponentsFormatter = {
-            let formatter = DateComponentsFormatter()
-            formatter.unitsStyle = .abbreviated
-            formatter.allowedUnits = [.hour, .minute]
-            return formatter
-        }()
+    // Shared instance: allocating a DateComponentsFormatter per call is expensive, and these labels
+    // are read from view bodies that re-evaluate many times during a detail-page load (main thread only).
+    private static let hourMinuteAbbreviatedFormatter: DateComponentsFormatter = {
+        let formatter = DateComponentsFormatter()
+        formatter.unitsStyle = .abbreviated
+        formatter.allowedUnits = [.hour, .minute]
+        return formatter
+    }()
 
+    var runTimeLabel: String? {
         guard let runTimeTicks,
-              let text = timeHMSFormatter.string(from: Double(runTimeTicks / 10_000_000)) else { return nil }
+              let text = Self.hourMinuteAbbreviatedFormatter.string(from: Double(runTimeTicks / 10_000_000)) else { return nil }
 
         return text
     }
@@ -280,11 +282,7 @@ extension BaseItemDto {
 
         let remainingSeconds = (totalTicks - playbackPositionTicks) / 10_000_000
 
-        let formatter = DateComponentsFormatter()
-        formatter.allowedUnits = [.hour, .minute]
-        formatter.unitsStyle = .abbreviated
-
-        return formatter.string(from: .init(remainingSeconds))
+        return Self.hourMinuteAbbreviatedFormatter.string(from: .init(remainingSeconds))
     }
 
     var programDuration: TimeInterval? {
@@ -349,11 +347,57 @@ extension BaseItemDto {
         return dateFormatter.string(from: premiereDate)
     }
 
+    /// Shared "yyyy" formatter — `DateFormatter()` allocation is expensive and the year labels
+    /// are computed per poster card during scroll. `DateFormatter` is thread-safe (Foundation,
+    /// iOS 7+), so a single cached instance is safe to share.
+    private static let yearOnlyFormatter: DateFormatter = {
+        let dateFormatter = DateFormatter()
+        // "yyyy" = calendar year. ("YYYY" is the ISO week-numbering year, which renders the WRONG
+        // year for late-Dec / early-Jan dates — a source of off-by-one years on poster labels.)
+        dateFormatter.dateFormat = "yyyy"
+        return dateFormatter
+    }()
+
     var premiereDateYear: String? {
         guard let premiereDate else { return nil }
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "YYYY"
-        return dateFormatter.string(from: premiereDate)
+        return Self.yearOnlyFormatter.string(from: premiereDate)
+    }
+
+    var endDateYear: String? {
+        guard let endDate else { return nil }
+        return Self.yearOnlyFormatter.string(from: endDate)
+    }
+
+    /// A release-year label: a single year for movies (e.g. "2019"), or a broadcast
+    /// range for series (e.g. "2019 - 2023", or "2019 - Present" while still airing).
+    /// Mirrors how jellyfin-web presents years in "More Like This".
+    ///
+    /// Series **always** show a range. We key off the series `status` (like the web does), NOT the
+    /// `endDate` — a still-airing show often carries a stale/season-level `endDate`, so trusting it
+    /// would wrongly cap an ongoing series (e.g. Jujutsu Kaisen showing "2020 - 2021").
+    var yearRangeLabel: String? {
+        guard let start = premiereDateYear ?? productionYear.map(String.init) else { return nil }
+
+        // Non-series (movies, etc.) show the single year.
+        guard type == .series else { return start }
+
+        switch SeriesStatus(rawValue: status ?? "") {
+        case .continuing:
+            // Still airing → through "Present", regardless of any end date on the record.
+            return "\(start) - Present"
+        case .ended:
+            // Concluded → show through the final broadcast year (range even if same year).
+            return "\(start) - \(endDateYear ?? start)"
+        case .unreleased:
+            // Not yet aired → just the (expected) year.
+            return start
+        case nil:
+            // Unknown status: use the end date if present, else assume still going.
+            if let end = endDateYear {
+                return "\(start) - \(end)"
+            }
+            return "\(start) - Present"
+        }
     }
 
     var hasExternalLinks: Bool {

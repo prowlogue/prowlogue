@@ -134,7 +134,11 @@ extension VideoPlayer.UIVideoPlayerContainerViewController {
                             }
                         )
                     ) { supplement in
+                        // See the tvOS branch: re-inject across `SupplementTabView`'s per-supplement
+                        // `HostingController` boundary so the supplement bodies keep their environment objects.
                         supplementContainer(for: supplement.supplement)
+                            .environmentObject(containerState)
+                            .environmentObject(manager)
                             .eraseToAnyView()
                     }
                     #else
@@ -142,7 +146,13 @@ extension VideoPlayer.UIVideoPlayerContainerViewController {
                         items: Array(currentSupplements),
                         selection: containerState.selectedSupplement?.id
                     ) { supplement in
+                        // `SupplementTabView` re-hosts each supplement in its OWN `HostingController`, which
+                        // starts a fresh SwiftUI environment — the `manager`/`containerState` injected on the
+                        // parent hosting controller do NOT cross that boundary. Re-inject them here or the
+                        // supplement bodies crash with "No ObservableObject of type MediaPlayerManager found".
                         supplementContainer(for: supplement.supplement)
+                            .environmentObject(containerState)
+                            .environmentObject(manager)
                             .eraseToAnyView()
                     }
                     #endif

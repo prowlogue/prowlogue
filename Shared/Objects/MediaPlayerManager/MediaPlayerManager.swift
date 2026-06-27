@@ -239,7 +239,10 @@ final class MediaPlayerManager: ViewModel {
             return
         }
 
-        if let nextItem = queue?.nextItem, try authenticatedUser.data.configuration?.enableNextEpisodeAutoPlay == true {
+        // An explicit-mode queue (e.g. shuffle) forces auto-advance regardless of the user's
+        // `enableNextEpisodeAutoPlay` server setting; otherwise honor that setting.
+        let autoPlayEnabled = try authenticatedUser.data.configuration?.enableNextEpisodeAutoPlay == true
+        if let nextItem = queue?.nextItem, queue?.forcesAutoAdvance == true || autoPlayEnabled {
             await self.playNewItem(provider: nextItem)
         } else {
             await self.stop()
@@ -415,6 +418,11 @@ final class MediaPlayerManager: ViewModel {
             mediaSource: currentItem.mediaSource,
             audioStreamIndex: audioStreamIndex ?? currentItem.selectedAudioStreamIndex,
             subtitleStreamIndex: subtitleStreamIndex ?? currentItem.selectedSubtitleStreamIndex,
+            // Keep the SESSION's resolved engine (the presented proxy/view is fixed for the session — see the
+            // hybrid AVPlayer/VLC split). Without this the rebuild would fall back to the default engine's
+            // `DeviceProfile`, which could mismatch the mounted proxy (e.g. a VLC-profile stream fed to the
+            // native AVPlayer). Matters for the adaptive-bitrate re-negotiation, which rebuilds mid-session.
+            videoPlayerType: currentItem.videoPlayerType,
             requestedBitrate: requestedBitrate ?? currentItem.requestedBitrate,
             modifyItem: { item in
                 if item.userData == nil {

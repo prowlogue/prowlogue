@@ -226,7 +226,7 @@ extension VideoPlayer {
                     .environmentObject(manager)
                     .eraseToAnyView()
             )
-            controller.disablesSafeArea = true
+            controller.disableSafeArea = true
             controller.automaticallyAllowUIKitAnimationsForNextUpdate = true
             controller.view.translatesAutoresizingMaskIntoConstraints = false
             return controller
@@ -239,7 +239,7 @@ extension VideoPlayer {
                     .environmentObject(manager)
                     .eraseToAnyView()
             )
-            controller.disablesSafeArea = true
+            controller.disableSafeArea = true
             controller.automaticallyAllowUIKitAnimationsForNextUpdate = true
             controller.view.translatesAutoresizingMaskIntoConstraints = false
             return controller
@@ -251,7 +251,7 @@ extension VideoPlayer {
                 .environmentObject(manager)
                 .eraseToAnyView()
             let controller = HostingController(content: content)
-            controller.disablesSafeArea = true
+            controller.disableSafeArea = true
             controller.automaticallyAllowUIKitAnimationsForNextUpdate = true
             controller.view.translatesAutoresizingMaskIntoConstraints = false
             return controller
@@ -738,15 +738,21 @@ extension VideoPlayer {
         override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
             super.touchesBegan(touches, with: event)
 
+            // A soft / resting touch must NOT summon the controls while they're hidden in full screen —
+            // otherwise just resting a finger on the Siri Remote clickpad (e.g. hovering over Select without
+            // clicking) flashes the transport up. When hidden, ignore the touch entirely; the controls are
+            // revealed by a real CLICK — Select / Play-Pause / a directional press (see `pressesEnded`). This
+            // also strengthens the GuamaFlix Skip Intro/Credits flow: with the overlay left hidden, a Select
+            // click still reaches `handleSelectEnded`'s skip intercept (no touch-wake to race it).
+            // When the controls are ALREADY visible, keep the normal behavior: poke the auto-hide timer so a
+            // resting touch keeps them up while the user is interacting.
+            guard containerState.isPresentingOverlay else { return }
+
             let now = CACurrentMediaTime()
             guard now - lastTouchPokeTime > 1.0 else { return }
             lastTouchPokeTime = now
 
-            if !containerState.isPresentingOverlay {
-                containerState.isPresentingOverlay = true
-            } else {
-                containerState.timer.poke()
-            }
+            containerState.timer.poke()
         }
 
         private func forwardPressesBegan(
@@ -811,6 +817,13 @@ extension VideoPlayer {
             }
         }
 
+        /// Route a USER play/pause toggle through SyncPlay when in a Watch Together group (so the explicit
+        /// press is broadcast to the group), otherwise change the local player directly as usual.
+        private func setUserPlaybackStatus(playing: Bool) {
+            if containerState.onUserPlayPauseIntent?(playing) == true { return }
+            manager.setPlaybackRequestStatus(status: playing ? .playing : .paused)
+        }
+
         private func handlePlayPauseEnded() {
             if containerState.isScrubbing {
                 containerState.cancelScrub()
@@ -818,25 +831,35 @@ extension VideoPlayer {
                 return
             }
 
-            if !containerState.isPresentingOverlay {
-                if manager.playbackRequestStatus == .paused {
-                    manager.setPlaybackRequestStatus(status: .playing)
-                }
-                containerState.isPresentingOverlay = true
-            } else {
-                switch manager.playbackRequestStatus {
-                case .playing:
-                    manager.setPlaybackRequestStatus(status: .paused)
-                case .paused:
-                    manager.setPlaybackRequestStatus(status: .playing)
-                }
+            // Toggle play/pause. When the controls are HIDDEN (full screen) do it SILENTLY — never summon the
+            // transport (the user wants a full-screen play/pause that leaves the UI hidden). When the controls are
+            // VISIBLE, toggle and poke the auto-hide timer as before. (Previously a hidden press always revealed
+            // the controls and only ever RESUMED — it couldn't pause without first showing the UI.)
+            let isVisible = containerState.isPresentingOverlay
+
+            switch manager.playbackRequestStatus {
+            case .playing:
+                setUserPlaybackStatus(playing: false)
+            case .paused:
+                setUserPlaybackStatus(playing: true)
             }
 
-            containerState.timer.poke()
+            if isVisible {
+                containerState.timer.poke()
+            }
         }
 
         private func handleSelectEnded(_ press: UIPress, event: UIPressesEvent?) {
             if !containerState.isPresentingOverlay {
+                // GuamaFlix Skip Intro/Credits: in full screen, Select skips the active segment instead of
+                // revealing the transport bar. The affordance is non-focusable in this mode, so the press
+                // reaches the container here.
+                let skipState = SkipSegmentState.shared
+                if skipState.isShowing {
+                    skipState.skip()
+                    return
+                }
+
                 containerState.isPresentingOverlay = true
                 containerState.timer.poke()
                 return
@@ -848,9 +871,9 @@ extension VideoPlayer {
             } else if containerState.isProgressBarFocused {
                 switch manager.playbackRequestStatus {
                 case .playing:
-                    manager.setPlaybackRequestStatus(status: .paused)
+                    setUserPlaybackStatus(playing: false)
                 case .paused:
-                    manager.setPlaybackRequestStatus(status: .playing)
+                    setUserPlaybackStatus(playing: true)
                 }
                 containerState.timer.poke()
             } else {
@@ -870,6 +893,10 @@ extension VideoPlayer {
                 containerState.timer.poke()
             } else if containerState.isPresentingOverlay {
                 containerState.isPresentingOverlay = false
+            } else if SkipSegmentState.shared.isShowing {
+                // GuamaFlix: in full screen with a Skip affordance showing, Back dismisses it (suppressed
+                // until the controls are next shown) instead of closing the player.
+                SkipSegmentState.shared.dismiss()
             } else if Defaults[.confirmClose] {
                 containerState.isPresentingCloseConfirmation = true
             } else {

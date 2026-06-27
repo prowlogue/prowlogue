@@ -30,7 +30,12 @@ extension NavigationRoute {
             id: "library-(\(viewModel.parent?.id ?? "Unparented"))",
             withNamespace: { .push(.zoom(sourceID: "item", namespace: $0)) }
         ) {
+            // tvOS landing page (revert this one line): `PagingLibraryView`. iOS keeps its own view.
+            #if os(tvOS)
+            NativePagingLibraryView(viewModel: viewModel)
+            #else
             PagingLibraryView(viewModel: viewModel)
+            #endif
         }
     }
 }

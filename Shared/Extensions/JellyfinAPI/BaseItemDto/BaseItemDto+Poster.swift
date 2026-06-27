@@ -7,6 +7,7 @@
 //
 
 import Defaults
+import Factory
 import Foundation
 import JellyfinAPI
 import SwiftUI
@@ -60,8 +61,66 @@ extension BaseItemDto: Poster {
         }
     }
 
+    /// Some plugin-supplied items aren't real library items — they carry no image tags and instead put a
+    /// ready-to-use poster URL inside `ProviderIds`.
+    ///
+    /// `ProviderIds` is a FREE-FORM `[String: String]` and the poster KEY varies by server/plugin version,
+    /// so resolve DYNAMICALLY rather than hardcoding one key:
+    ///   1. Prefer the well-known keys below, in order, for determinism.
+    ///   2. Otherwise accept ANY entry whose key looks like a poster/image and whose value is an absolute
+    ///      `http(s)` URL.
+    /// Real provider ids (Tmdb / Imdb / Tvdb / …) are short ids — never URLs — so this can't match a normal
+    /// library item; it only fires for plugin-supplied artwork.
+    var pluginPosterImageSource: ImageSource? {
+        guard let providerIDs, providerIDs.isNotEmpty else { return nil }
+
+        // A poster value is EITHER an absolute `http(s)` URL OR a path relative to the Jellyfin server. A
+        // relative path must be resolved against the CURRENT server base URL (preserving any subpath like
+        // `/jellyfin`) — NOT against any `…Root` provider id, which points at a web app that returns HTML,
+        // not an image.
+        func resolveImageURL(_ value: String?) -> URL? {
+            guard let value, value.isNotEmpty else { return nil }
+            if let url = URL(string: value), let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" {
+                return url
+            }
+            // Leading slash = a server-relative path. (A real provider id like a Tmdb number never starts with
+            // "/", so this can't misfire on a normal library item.)
+            if value.hasPrefix("/") {
+                return Container.shared.currentUserSession()?.client.url(path: value)
+            }
+            return nil
+        }
+
+        // 1) Preferred explicit poster keys (deterministic order).
+        for key in ["JellyseerrPoster", "RadarrPoster", "SonarrPoster"] {
+            if let url = resolveImageURL(providerIDs[key]) {
+                return ImageSource(url: url, blurHash: nil)
+            }
+        }
+
+        // 2) Fallback: any image-like key (…Poster / …Image / …Thumb / …Art) holding an http(s) URL —
+        //    sorted by key so the choice is stable across launches for a given item.
+        for (_, value) in providerIDs
+            .filter({ key, _ in
+                let k = key.lowercased()
+                return k.hasSuffix("poster") || k.hasSuffix("image") || k.hasSuffix("thumb") || k.hasSuffix("art")
+            })
+            .sorted(by: { $0.key < $1.key })
+        {
+            if let url = resolveImageURL(value) {
+                return ImageSource(url: url, blurHash: nil)
+            }
+        }
+
+        return nil
+    }
+
     func portraitImageSources(maxWidth: CGFloat? = nil, quality: Int? = nil) -> [ImageSource] {
-        switch type {
+        if let pluginPosterImageSource {
+            return [pluginPosterImageSource]
+        }
+
+        return switch type {
         case .episode:
             [seriesImageSource(.primary, maxWidth: maxWidth, quality: quality)]
         case .boxSet, .channel, .liveTvChannel, .movie, .musicArtist, .person, .series, .tvChannel:
@@ -87,7 +146,11 @@ extension BaseItemDto: Poster {
     }
 
     func landscapeImageSources(maxWidth: CGFloat? = nil, quality: Int? = nil) -> [ImageSource] {
-        switch type {
+        if let pluginPosterImageSource {
+            return [pluginPosterImageSource]
+        }
+
+        return switch type {
         case .episode:
             if Defaults[.Customization.Episodes.useSeriesLandscapeBackdrop] {
                 [
@@ -118,7 +181,11 @@ extension BaseItemDto: Poster {
     }
 
     func squareImageSources(maxWidth: CGFloat?, quality: Int? = nil) -> [ImageSource] {
-        switch type {
+        if let pluginPosterImageSource {
+            return [pluginPosterImageSource]
+        }
+
+        return switch type {
         case .audio, .channel, .musicAlbum, .tvChannel:
             [imageSource(.primary, maxWidth: maxWidth, quality: quality)]
         default:

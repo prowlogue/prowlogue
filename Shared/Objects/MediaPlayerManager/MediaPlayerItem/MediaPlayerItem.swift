@@ -52,6 +52,10 @@ class MediaPlayerItem: ViewModel, MediaPlayerObserver {
 
     let baseItem: BaseItemDto
     let deviceProfile: DeviceProfile
+    /// The player engine (VLC `.swiftfin` vs native AVPlayer) resolved for this item — see
+    /// `VideoPlayerType.hybrid(for:)`. Stored so the whole playback session (e.g. the episode
+    /// auto-play queue) builds adjacent items with the SAME engine the presented view/proxy uses.
+    let videoPlayerType: VideoPlayerType
     let mediaSource: MediaSourceInfo
     let playSessionID: String
     let previewImageProvider: (any PreviewImageProvider)?
@@ -61,6 +65,12 @@ class MediaPlayerItem: ViewModel, MediaPlayerObserver {
     let audioStreams: [MediaStream]
     let subtitleStreams: [MediaStream]
     let videoStreams: [MediaStream]
+
+    /// Chapter metadata + image URLs, resolved ONCE for the playback session.
+    /// `BaseItemDto.fullChapterInfo` builds an image URL (Codable query encoding) per
+    /// chapter on every access — reading it per overlay body pass was the player's
+    /// single biggest main-thread cost, so consumers read this stored copy instead.
+    let fullChapterInfo: [ChapterInfo.FullInfo]?
 
     let requestedBitrate: PlaybackBitrate
 
@@ -73,6 +83,7 @@ class MediaPlayerItem: ViewModel, MediaPlayerObserver {
         url: URL,
         requestedBitrate: PlaybackBitrate = .max,
         deviceProfile: DeviceProfile,
+        videoPlayerType: VideoPlayerType = .swiftfin,
         initialAudioStreamIndex: Int? = nil,
         initialSubtitleStreamIndex: Int? = nil,
         previewImageProvider: (any PreviewImageProvider)? = nil,
@@ -83,19 +94,22 @@ class MediaPlayerItem: ViewModel, MediaPlayerObserver {
         self.playSessionID = playSessionID
         self.requestedBitrate = requestedBitrate
         self.deviceProfile = deviceProfile
+        self.videoPlayerType = videoPlayerType
         self.previewImageProvider = previewImageProvider
         self.thumbnailProvider = thumbnailProvider
         self.url = url
+        self.fullChapterInfo = baseItem.fullChapterInfo
 
         let mediaStreams = mediaSource.mediaStreams
         let isTranscoding = mediaSource.transcodingURL != nil
 
         // TODO: Fix External Audio Tracks & Re-Enable
         self.audioStreams = mediaStreams?.filter { $0.type == .audio && $0.isExternal != true } ?? []
+        let isDirectPlayCompatibility = Defaults[.VideoPlayer.Playback.compatibilityMode] == .directPlay
         self.subtitleStreams = mediaStreams?.filter {
             $0.type == .subtitle
                 && $0.deliveryMethod != .drop
-                && !(Defaults[.VideoPlayer.Playback.compatibilityMode] == .directPlay
+                && !(isDirectPlayCompatibility
                     && $0.isExternal == true
                     && $0.isTextSubtitleStream != true)
         } ?? []

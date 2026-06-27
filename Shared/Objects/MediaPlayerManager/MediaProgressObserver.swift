@@ -70,13 +70,31 @@ class MediaProgressObserver: ViewModel, MediaPlayerObserver {
         manager.$playbackRequestStatus
             .sink { [weak self] in self?.playbackRequestStatusDidChange($0) }
             .store(in: &cancellables)
+
+        // Upstream (Swiftfin #2057): end the session cleanly if the app is terminated mid-playback, so the
+        // server isn't left with a running transcode / open stream until its own inactivity timeout.
+        Notifications[.applicationWillTerminate]
+            .publisher
+            .sink { [weak self] _ in self?.endPlaybackSession() }
+            .store(in: &cancellables)
+    }
+
+    /// Single teardown path for every "playback is ending" case (item change, stop, app terminate): report
+    /// stop, stop any server-side transcode (upstream #2057's `stopEncoding`), and close the opened live
+    /// stream so the IPTV tuner is freed (GuamaFlix — see `closeLiveStreamIfNeeded`). Consolidated per #2057.
+    private func endPlaybackSession() {
+        guard let item else { return }
+        sendStopReport(for: item, seconds: manager?.seconds)
+        stopEncoding(for: item)
+        closeLiveStreamIfNeeded(for: item)
     }
 
     private func playbackItemDidChange(_ newItem: MediaPlayerItem?) {
         timer.poke()
 
         if let item, newItem !== item {
-            sendStopReport(for: item, seconds: manager?.seconds)
+            // Stop report + transcode stop + live-stream close for the OUTGOING item (see endPlaybackSession).
+            endPlaybackSession()
 
             self.item = newItem
             self.hasSentStart = false
@@ -94,13 +112,47 @@ class MediaProgressObserver: ViewModel, MediaPlayerObserver {
     private func didReceive(action: MediaPlayerManager._Action) {
         switch action {
         case .stop:
-            if let item {
-                sendStopReport(for: item, seconds: manager?.seconds)
-            }
+            // Stop report + transcode stop + live-stream/tuner close (see endPlaybackSession). Freeing the
+            // live stream the moment the player closes is the app's job — the server otherwise only times it
+            // out minutes later, blocking a one-stream-per-account IPTV provider from tuning another channel.
+            endPlaybackSession()
             timer.stop()
             cancellables = []
             item = nil
         default: ()
+        }
+    }
+
+    /// Closes the server-side live stream opened for this item (Live TV channels, and any source the server
+    /// opened via `isAutoOpenLiveStream`). Best-effort and OUTSIDE the debug progress-report gate — this is
+    /// resource cleanup, not telemetry, so it must run even when progress reporting is disabled.
+    private func closeLiveStreamIfNeeded(for item: MediaPlayerItem) {
+        guard let liveStreamID = item.mediaSource.liveStreamID, liveStreamID.isNotEmpty else { return }
+
+        Task {
+            do {
+                try await send(Paths.closeLiveStream(liveStreamID: liveStreamID))
+            } catch {
+                // Best-effort: if the close fails (network drop, already closed), the server's inactivity
+                // timeout will eventually reclaim the stream.
+            }
+        }
+    }
+
+    /// Upstream (Swiftfin #2057): when the source was being TRANSCODED, ask the server to kill the encoder
+    /// process immediately on teardown instead of waiting for its inactivity timeout — frees server CPU/memory.
+    /// No-op for Direct Play (no `transcodingURL`).
+    private func stopEncoding(for item: MediaPlayerItem) {
+        guard item.mediaSource.transcodingURL != nil,
+              let deviceID = userSession?.client.configuration.deviceID
+        else { return }
+
+        Task {
+            let request = Paths.stopEncodingProcess(
+                deviceID: deviceID,
+                playSessionID: item.playSessionID
+            )
+            try await send(request)
         }
     }
 
@@ -114,6 +166,7 @@ class MediaProgressObserver: ViewModel, MediaPlayerObserver {
             var info = PlaybackStateInfo()
             info.audioStreamIndex = item.selectedAudioStreamIndex
             info.itemID = item.baseItem.id
+            info.liveStreamID = item.mediaSource.liveStreamID
             info.mediaSourceID = item.mediaSource.id
             info.playSessionID = item.playSessionID
             info.positionTicks = seconds?.ticks
@@ -136,6 +189,7 @@ class MediaProgressObserver: ViewModel, MediaPlayerObserver {
         Task {
             var info = PlaybackStopInfo()
             info.itemID = item.baseItem.id
+            info.liveStreamID = item.mediaSource.liveStreamID
             info.mediaSourceID = item.mediaSource.id
             info.playSessionID = item.playSessionID
             info.positionTicks = seconds?.ticks
@@ -143,6 +197,14 @@ class MediaProgressObserver: ViewModel, MediaPlayerObserver {
 
             let request = Paths.reportPlaybackStopped(info)
             try await send(request)
+
+            // Tell any open item detail page (and the home rows) to reload this item from the server, so
+            // the play button flips to "Resume" and progress shows immediately after watching — instead
+            // of staying stale until the app is relaunched. The view models listen for this and do a
+            // non-disruptive background refresh.
+            if let itemID = item.baseItem.id {
+                Notifications[.itemShouldRefreshMetadata].post(itemID)
+            }
         }
     }
 
@@ -157,6 +219,7 @@ class MediaProgressObserver: ViewModel, MediaPlayerObserver {
             info.audioStreamIndex = item.selectedAudioStreamIndex
             info.isPaused = isPaused
             info.itemID = item.baseItem.id
+            info.liveStreamID = item.mediaSource.liveStreamID
             info.mediaSourceID = item.mediaSource.id
             info.playSessionID = item.playSessionID
             info.positionTicks = seconds?.ticks

@@ -41,7 +41,16 @@ extension MediaPlayerItem {
             throw ErrorMessage(L10n.unknownError)
         }
 
-        var item = try await initialItem.getFullItem(userSession: userSession)
+        // Skip the redundant full-item fetch when the caller already handed us a COMPLETE item. The detail
+        // page loads the full item (media sources, chapters, trickplay) before routing to Play, so re-running
+        // `getFullItem` here — an unconditional GET /Items/{id} — only adds one server round-trip of latency to
+        // the first frame for data we already hold. PARTIAL items (no media sources: deep links / synthetic
+        // items) still fetch. The playable stream is (re)negotiated by the PlaybackInfo POST below either way,
+        // so this changes nothing about the resolved source — only whether we pay for a duplicate metadata GET.
+        var item = initialItem
+        if item.mediaSources?.isNotEmpty != true {
+            item = try await initialItem.getFullItem(userSession: userSession)
+        }
 
         if let modifyItem {
             modifyItem(&item)
@@ -63,7 +72,24 @@ extension MediaPlayerItem {
             throw ErrorMessage(L10n.unknownError)
         }
 
-        let maxBitrate = try await requestedBitrate.getMaxBitrate()
+        // Both "force original video" modes (Force Direct Play and Preferred) must ALSO drop the bitrate
+        // limit: `DeviceProfile.build` applies `maxBitrate` to `maxStaticBitrate`, the field Jellyfin's
+        // StreamBuilder checks for Direct Play — so a high-bitrate source would otherwise be rejected (and
+        // for Forced, which has no transcoding profile, playback would fail outright). `nil` = no limit.
+        //
+        // The native (AVPlayer) engine is chosen ONLY for HDR / Dolby Vision (see `VideoPlayerType.hybrid`).
+        // For an MKV, AVPlayer can't Direct Play it (no Matroska demuxer) so Jellyfin REMUXES to fMP4/HLS. If
+        // the request is uncapped, that remux COPIES the HEVC video (`-c:v copy -tag:v dvh1`), preserving Dolby
+        // Vision / HDR; but ANY bitrate cap below the source forces a re-encode, which tone-maps Dolby Vision
+        // down to SDR (`hevc_nvenc` + `tonemap`, tagged `hvc1`) — the exact failure we hit. HDR is all-or-
+        // nothing, so the native path is ALWAYS uncapped regardless of the user's bitrate setting; only VLC
+        // (`.swiftfin`) content honours the cap. (Adaptive bitrate is likewise gated off the native engine.)
+        let forcesOriginalVideo = compatibilityMode == .directPlay
+            || compatibilityMode == .preferDirectPlay
+            || videoPlayerType == .native
+        let maxBitrate: Int? = forcesOriginalVideo
+            ? nil
+            : try await requestedBitrate.getMaxBitrate()
 
         let deviceProfile = DeviceProfile.build(
             for: videoPlayerType,
@@ -123,6 +149,11 @@ extension MediaPlayerItem {
             throw ErrorMessage("Unable to find media source for item")
         }
 
+        // A multi-version item (its `mediaSources` count > 1, surfaced by our pre-play version picker) can
+        // have per-version runtimes/edits — adopt the SELECTED source's runtime so the scrubber/duration
+        // reflect the version actually playing, not the item's default source. (Upstream Swiftfin #2054.)
+        item.runTimeTicks = mediaSource.runTimeTicks ?? item.runTimeTicks
+
         guard let playSessionID = response.value.playSessionID else {
             throw ErrorMessage("No associated play session ID")
         }
@@ -146,7 +177,14 @@ extension MediaPlayerItem {
 
             if case let PreviewImageScrubbingOption.trickplay(fallbackToChapters: fallbackToChapters) = previewImageScrubbingSetting {
                 if let mediaSourceID = mediaSource.id,
-                   let trickplayInfo = item.trickplay?[mediaSourceID]?.first
+                   // `trickplay[mediaSourceID]` is a dictionary keyed by generated tile WIDTH; a server may
+                   // hold several resolutions. Pick the HIGHEST-width set so the scrub preview is as sharp as
+                   // the server has (was `.first` — an arbitrary, often lower, resolution). Servers with only
+                   // the default single (~320px) set are unaffected; a sharper preview there needs a higher
+                   // server-side trickplay width, not a client change (the tile is used at native size, never
+                   // downsampled — the softness is just upscaling that fixed tile to the preview size).
+                   let trickplayInfo = item.trickplay?[mediaSourceID]?
+                       .max(by: { ($0.value.width ?? 0) < ($1.value.width ?? 0) })
                 {
                     return TrickplayPreviewImageProvider(
                         info: trickplayInfo.value,
@@ -166,6 +204,12 @@ extension MediaPlayerItem {
             return nil
         }()
 
+        // Live TV (ATSC/cable) channels carry embedded CEA-608/708 closed captions that the server
+        // commonly exposes as the DEFAULT subtitle track. Unlike jellyfin-web — which leaves Live TV
+        // subtitles off — the player would honor that default and render captions on screen. Start live
+        // streams with subtitles OFF (the viewer can still turn them on from the player's subtitle menu).
+        let resolvedSubtitleStreamIndex = item.isLiveStream ? -1 : subtitleStreamIndex
+
         return .init(
             baseItem: item,
             mediaSource: mediaSource,
@@ -173,8 +217,9 @@ extension MediaPlayerItem {
             url: playbackURL,
             requestedBitrate: requestedBitrate,
             deviceProfile: deviceProfile,
+            videoPlayerType: videoPlayerType,
             initialAudioStreamIndex: audioStreamIndex,
-            initialSubtitleStreamIndex: subtitleStreamIndex,
+            initialSubtitleStreamIndex: resolvedSubtitleStreamIndex,
             previewImageProvider: previewImageProvider,
             thumbnailProvider: item.getNowPlayingImage
         )
@@ -208,11 +253,16 @@ extension MediaPlayerItem {
 
             logger.trace("Making video stream URL for item \(itemID)")
 
+            // Build the Direct-Play stream from the SELECTED media source's tag + id (falling back to the
+            // item's only when the source lacks them), not the item's. For a multi-version item, using the
+            // item id as `mediaSourceID` made the server hand back its DEFAULT source — so Direct-Playing a
+            // non-first version (via our pre-play version picker) played the WRONG file. (Upstream #2054;
+            // matches jellyfin-web. The `??` fallbacks keep single-version behavior byte-identical.)
             let videoStreamParameters = Paths.GetVideoStreamParameters(
                 isStatic: true,
-                tag: item.etag,
+                tag: mediaSource.eTag ?? item.etag,
                 playSessionID: playSessionID,
-                mediaSourceID: itemID
+                mediaSourceID: mediaSource.id ?? itemID
             )
 
             let videoStreamRequest = Paths.getVideoStream(

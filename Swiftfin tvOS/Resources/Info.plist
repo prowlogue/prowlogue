@@ -8,8 +8,12 @@
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>CFBundleDisplayName</key>
+	<string>GuamaFlix</string>
 	<key>CFBundleName</key>
-	<string>$(PRODUCT_NAME)</string>
+	<string>GuamaFlix</string>
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>
@@ -21,7 +25,7 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>swiftfin</string>
+				<string>guamaflix</string>
 			</array>
 		</dict>
 	</array>
@@ -42,6 +46,15 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>UIBackgroundModes</key>
+	<array>
+		<!-- Declares the background-fetch capability so GuamaFlix appears in tvOS
+		     Settings → General → Background App Refresh. This is intentionally a SHELL:
+		     no BGTaskScheduler task is registered/scheduled yet, so nothing actually runs
+		     in the background. The Top Shelf stays on-demand (re-fetched when tvOS shows it).
+		     Wire up a BGAppRefreshTask handler here later to make this do real work. -->
+		<string>fetch</string>
+	</array>
 	<key>UIDesignRequiresCompatibility</key>
 	<true/>
 	<key>UILaunchScreen</key>

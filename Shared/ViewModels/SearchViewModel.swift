@@ -7,10 +7,26 @@
 //
 
 import Combine
+import Factory
 import Foundation
 import JellyfinAPI
 import OrderedCollections
 import SwiftUI
+
+extension Container {
+
+    /// A single shared, session-scoped `SearchViewModel`. Sharing it lets the app **prefetch** the
+    /// search landing data — the suggestion shelf — in
+    /// the background at launch (see `HomeView`) into the SAME instance the Search tab later displays,
+    /// so landing on Search shows suggestions immediately instead of building + fetching on first
+    /// appear. `.scope(.session)` keeps one instance for the app session; its network calls always use
+    /// the current `userSession`. The scope is NOT cleared on sign-out, so the view model wipes itself
+    /// on a session change (see `observeSessionChangesIfNeeded`).
+    var searchViewModel: Factory<SearchViewModel> {
+        self { @MainActor in SearchViewModel(filterViewModel: FilterViewModel()) }
+            .scope(.session)
+    }
+}
 
 @MainActor
 @Stateful
@@ -46,7 +62,17 @@ final class SearchViewModel: ViewModel {
     @Published
     private(set) var suggestions: [BaseItemDto] = []
 
+    /// True while the suggestion shelf is being fetched AND nothing is shown yet — drives the Search
+    /// page's loading spinner. Kept separate from `state` (which tracks active QUERY searches) so the
+    /// suggestion load never gates the search bar / keyboard.
+    @Published
+    private(set) var isLoadingSuggestions = false
+
     private var searchQuery: CurrentValueSubject<String, Never> = .init("")
+
+    // Background launch warm-up bookkeeping (see `prefetchIfNeeded`).
+    private var hasPrefetched = false
+    private var observingSession = false
 
     let filterViewModel: FilterViewModel
 
@@ -104,17 +130,12 @@ final class SearchViewModel: ViewModel {
             returning: [BaseItemKind: [BaseItemDto]].self
         ) { group in
 
-            // Base items
+            // Only the categories we surface: Movies, Shows, Episodes (+ People below). Kept deliberately
+            // narrow so each search fires fewer concurrent requests (a wider fan-out felt sluggish).
             let retrievingItemTypes: [BaseItemKind] = [
-                .boxSet,
-                .episode,
                 .movie,
-                .musicArtist,
-                .musicVideo,
-                .liveTvProgram,
                 .series,
-                .tvChannel,
-                .video,
+                .episode,
             ]
 
             for type in retrievingItemTypes {
@@ -176,7 +197,8 @@ final class SearchViewModel: ViewModel {
         let request = Paths.getItems(parameters: parameters)
         let response = try await send(request)
 
-        return response.value.items ?? []
+        // Only show results that actually have poster artwork — drop the art-less "clutter" entries.
+        return (response.value.items ?? []).filter(Self.hasPosterArtwork)
     }
 
     private func _getPeople(query: String) async throws -> [BaseItemDto] {
@@ -188,25 +210,85 @@ final class SearchViewModel: ViewModel {
         let request = Paths.getPersons(parameters: parameters)
         let response = try await send(request)
 
-        return response.value.items ?? []
+        // Actors are filtered the same way — only those with a headshot photo are shown.
+        return (response.value.items ?? []).filter(Self.hasPosterArtwork)
+    }
+
+    /// True when the item has its own primary image (poster / still / headshot). Used to hide art-less
+    /// results from every search row.
+    private static func hasPosterArtwork(_ item: BaseItemDto) -> Bool {
+        (item.imageTags?[ImageType.primary.rawValue]?.isEmpty == false)
     }
 
     // MARK: suggestions
 
     @Function(\Action.Cases.getSuggestions)
     private func _getSuggestions() async throws {
+        isLoadingSuggestions = true
+        defer { isLoadingSuggestions = false }
 
-        await filterViewModel.getQueryFilters()
+        // Prefer a small, relevant sampled set instead of the expensive whole-library `ItemSortBy.random`
+        // server query (slow on large libraries). When it isn't present, fall back to a whole-library random.
+        let spotlightSuggestions = await GuamaFlixSpotlightSuggestions.sampledItems()
+        self.suggestions = try await spotlightSuggestions.isNotEmpty
+            ? spotlightSuggestions
+            : randomLibrarySuggestions()
 
+        // NOTE: the filter-metadata warm-up (genres / tags / years / studios via
+        // `filterViewModel.getQueryFilters()`) that used to follow here was removed — the tvOS
+        // search page has no filter UI, so it was a wasted request per session on every server.
+        // If a filter drawer is ever added, fetch these when the drawer opens.
+    }
+
+    /// The whole-library fallback: a random Movies/Shows query (used when no spotlight playlist exists).
+    private func randomLibrarySuggestions(limit: Int = 10) async throws -> [BaseItemDto] {
         var parameters = Paths.GetItemsParameters()
         parameters.includeItemTypes = [.movie, .series]
         parameters.isRecursive = true
-        parameters.limit = 10
+        parameters.limit = limit
         parameters.sortBy = [ItemSortBy.random]
 
         let request = Paths.getItems(parameters: parameters)
         let response = try await send(request)
 
-        self.suggestions = response.value.items ?? []
+        return (response.value.items ?? []).filter(Self.hasPosterArtwork)
+    }
+
+    // MARK: prefetch
+
+    /// One-shot background warm-up at app launch: fetches the suggestion shelf (and, off its critical
+    /// path, the filter metadata) **once** so landing on the Search tab shows suggestions immediately
+    /// instead of a first-appear build + network round-trip. Idempotent and silent — if it fails, the
+    /// tab simply loads suggestions normally when opened.
+    func prefetchIfNeeded() {
+        observeSessionChangesIfNeeded()
+        guard !hasPrefetched else { return }
+        hasPrefetched = true
+
+        getSuggestions()
+    }
+
+    /// This view model is a shared, session-scoped singleton (so it can be prefetched at launch), and
+    /// that scope is NOT cleared on sign-out. Without this, after an account/server switch the previous
+    /// user's suggestions/results would linger and could briefly be shown to the next user. So we wipe
+    /// everything whenever the signed-in session changes and let it re-prefetch fresh.
+    private func observeSessionChangesIfNeeded() {
+        guard !observingSession else { return }
+        observingSession = true
+
+        Notifications[.didChangeUserSession]
+            .publisher
+            .sink { [weak self] _ in
+                Task { @MainActor in self?.reset() }
+            }
+            .store(in: &cancellables)
+    }
+
+    private func reset() {
+        hasPrefetched = false
+        items.removeAll()
+        suggestions.removeAll()
+        isLoadingSuggestions = false
+        searchQuery.value = ""
     }
 }

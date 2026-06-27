@@ -118,9 +118,14 @@ class EpisodeMediaPlayerQueue: ViewModel, MediaPlayerQueue {
         var nextProvider: MediaPlayerItemProvider?
         var previousProvider: MediaPlayerItemProvider?
 
+        // The presented player view/proxy is fixed for the whole session, so adjacent auto-play episodes
+        // MUST build with the SAME engine the current item used — re-resolving per episode could hand a
+        // VLC-profile stream to the native proxy (or vice versa). Follow the session's resolved engine.
+        let sessionPlayerType = manager?.playbackItem?.videoPlayerType ?? Defaults[.VideoPlayer.videoPlayerType]
+
         if let nextItem {
             nextProvider = MediaPlayerItemProvider(item: nextItem) { item in
-                try await MediaPlayerItem.build(for: item) {
+                try await MediaPlayerItem.build(for: item, videoPlayerType: sessionPlayerType) {
                     $0.userData?.playbackPositionTicks = .zero
                 }
             }
@@ -128,7 +133,7 @@ class EpisodeMediaPlayerQueue: ViewModel, MediaPlayerQueue {
 
         if let previousItem {
             previousProvider = MediaPlayerItemProvider(item: previousItem) { item in
-                try await MediaPlayerItem.build(for: item) {
+                try await MediaPlayerItem.build(for: item, videoPlayerType: sessionPlayerType) {
                     $0.userData?.playbackPositionTicks = .zero
                 }
             }
@@ -166,12 +171,16 @@ extension EpisodeMediaPlayerQueue {
         }
 
         private func select(episode: BaseItemDto) {
+            // Keep the manually-selected episode on the same engine as the active session (the proxy
+            // can't be swapped mid-session). See the adjacent-episode note above.
+            let sessionPlayerType = manager.playbackItem?.videoPlayerType ?? Defaults[.VideoPlayer.videoPlayerType]
             let provider = MediaPlayerItemProvider(item: episode) { item in
                 let mediaSource = item.mediaSources?.first
 
                 return try await MediaPlayerItem.build(
                     for: item,
-                    mediaSource: mediaSource!
+                    mediaSource: mediaSource!,
+                    videoPlayerType: sessionPlayerType
                 )
             }
 
@@ -526,26 +535,49 @@ extension EpisodeMediaPlayerQueue {
         let episode: BaseItemDto
         let action: () -> Void
 
+        @ViewBuilder
+        private var caption: some View {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(episode.displayTitle)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1, reservesSpace: true)
+
+                EpisodeDescription(episode: episode)
+                    .font(UIDevice.isTV ? .caption : .subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1, reservesSpace: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+
         var body: some View {
+            #if os(tvOS)
+            // GuamaFlix: native `.buttonStyle(.card)` poster (memoized image source, off-main BlurHash backdrop,
+            // NO custom glass rim / `.posterShadow()`) — matches the home / item-detail / episode-selector cards.
+            // The accent ring marks the now-playing episode; the caption sits outside the button.
+            GuamaFlixPlayerPosterCard(
+                itemID: episode.id,
+                sourceKind: "playerEpisodePrimary600",
+                blurHash: episode.blurHashString(for: .primary),
+                fallbackSystemImage: episode.systemImage,
+                isCurrent: manager.item.id == episode.id,
+                action: action,
+                makeSource: { episode.imageSource(.primary, maxWidth: 600) }
+            ) {
+                caption
+                    .padding(.top, 8)
+            }
+            #else
             SupplementPosterButton(
                 item: episode._withLandscapeImages { [episode.imageSource(.primary, maxWidth: $0, quality: $1)] },
                 action: action
             ) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(episode.displayTitle)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.primary)
-                        .lineLimit(1, reservesSpace: true)
-
-                    EpisodeDescription(episode: episode)
-                        .font(UIDevice.isTV ? .caption : .subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1, reservesSpace: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                caption
             }
             .isSelected(manager.item.id == episode.id)
+            #endif
         }
     }
 }

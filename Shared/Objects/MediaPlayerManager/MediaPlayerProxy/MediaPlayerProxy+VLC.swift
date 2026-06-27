@@ -140,9 +140,46 @@ extension VLCMediaPlayerProxy {
             let mediaSource = item.mediaSource
 
             var configuration = VLCVideoPlayer.Configuration(url: item.url)
-            configuration.autoPlay = true
+            // Honour the manager's requested status: normal playback is `.playing` (default) so libVLC
+            // auto-starts as before. But when SyncPlay adopts this player into a PAUSED group it sets the
+            // status to `.paused` BEFORE this config is built, so we open paused instead of auto-starting —
+            // which previously played locally AND got re-broadcast to the whole group as an Unpause. The
+            // server's later Unpause command resumes us in lockstep.
+            configuration.autoPlay = manager.playbackRequestStatus == .playing
+
+            // `network-caching` = libVLC's jitter buffer (ms) filled before/while decoding a network source.
+            // VLCUI passes `options` to `VLCMedia.addOptions`, i.e. onto the Media — the value libVLC
+            // actually honors for buffering (a documented libVLC nuance; the LibVLC-instance value is
+            // ignored). Two very different needs:
+            //  • VOD: a small 500ms buffer — still a fast first frame, with a touch more jitter headroom than
+            //    the old 300ms; a hiccup just rebuffers locally from a seekable source, and startup latency is
+            //    what the user feels.
+            //  • LIVE TV: an IPTV/HDHR MPEG-TS feed carries real network jitter and is NOT seekable, so at
+            //    300ms any jitter spike >300ms drains the buffer and VLC rebuffers — the "stutters, corrects
+            //    itself, stutters again" loop. 1000ms is the VideoLAN/IPTV-community starting point: it
+            //    trades ~700ms of extra tune-in (negligible against the multi-second tuner lock) for jitter
+            //    tolerance, and is the OPTIMAL knob here — re-tuning (our stall watchdog) is a last resort for
+            //    DEAD feeds, not a stutter fix. Clock-jitter is left at libVLC's default 5s growing window
+            //    (the stable setting; `clock-jitter=0` is a low-latency tweak that HURTS live stability).
+            //    Tunable: raise toward 1500–3000 if stutter persists on a poorer connection.
+            let networkCaching = baseItem.isLiveStream ? 1000 : 500
+            var options: [String: Any] = ["network-caching": networkCaching]
 
             let startSeconds = max(.zero, (baseItem.startSeconds ?? .zero) - Duration.seconds(Defaults[.VideoPlayer.resumeOffset]))
+
+            // Resume WITHOUT the first-frame flash. `configuration.startSeconds` alone makes VLCUI PLAY from
+            // the start, render the first frame(s), then SEEK to the resume point on the first time-update —
+            // the visible "flash at 0, then jump". Instead we hand libVLC's demuxer a `:start-time` (seconds)
+            // media option so it begins decoding AT the resume offset and never outputs a frame at 0. The
+            // client-side `startSeconds` seek below is KEPT as a belt-and-suspenders fallback for any input
+            // where `start-time` isn't honored; when it IS honored the later seek is a no-op (already there).
+            // Live streams never resume. (Applies to direct play AND transcode — the transcode URL is not
+            // pre-offset here, so both paths otherwise seek client-side and both otherwise flash.)
+            if !baseItem.isLiveStream, startSeconds > .zero {
+                options["start-time"] = startSeconds.seconds
+            }
+
+            configuration.options = options
 
             if !baseItem.isLiveStream {
                 configuration.startSeconds = startSeconds
@@ -157,6 +194,12 @@ extension VLCMediaPlayerProxy {
                 }
 
                 configuration.subtitleIndex = .absolute(subtitleIndex)
+            } else {
+                // Live TV: subtitles OFF by default. Leaving the config at VLCUI's `.auto` made libVLC
+                // auto-enable the broadcast's embedded closed-caption track (ATSC 608/708 — always present on
+                // OTA channels), which no stock live-TV player shows unprompted. The build path already
+                // resolves the live subtitle index to -1; this carries that into the VLC open.
+                configuration.subtitleIndex = .absolute(-1)
             }
 
             configuration.subtitleSize = .absolute(25 - Defaults[.VideoPlayer.Subtitle.subtitleSize])

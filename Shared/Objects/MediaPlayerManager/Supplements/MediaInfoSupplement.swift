@@ -138,7 +138,9 @@ extension MediaInfoSupplement {
 
         @ViewBuilder
         private var regularContent: some View {
-            HStack(alignment: .bottom, spacing: EdgeInsets.edgePadding) {
+            // Top-aligned: the poster + text read from the top of the panel. (Was `.bottom`, which
+            // bottom-aligned the shorter text column against the poster so the text appeared to sit low.)
+            HStack(alignment: .top, spacing: EdgeInsets.edgePadding) {
                 // TODO: determine what to do with non-portrait (channel, home video) images
                 //       - use aspect ratio?
                 PosterImage(
@@ -167,19 +169,6 @@ extension MediaInfoSupplement {
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-
-                if !item.isLiveStream {
-                    AlternateLayoutView {
-                        Label(L10n.fromBeginning, systemImage: "play.fill")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .padding()
-                            .edgePadding(.horizontal)
-                            .frame(height: UIDevice.isTV ? 80 : 50)
-                    } content: {
-                        fromBeginningButton
-                    }
-                }
             }
         }
 
@@ -195,12 +184,8 @@ extension MediaInfoSupplement {
                 .edgePadding()
                 .frame(maxWidth: .infinity, alignment: .topLeading)
                 .focusSection()
-                .backport
-                .defaultFocus(
-                    $isResetButtonFocused,
-                    true,
-                    priority: .userInitiated
-                )
+            // No default focus: the Info tab is now read-only (the "From Beginning" button was removed), so
+            // there's nothing to focus — the tab is reached via the supplement tab bar and dismissed with Menu.
         }
     }
 }

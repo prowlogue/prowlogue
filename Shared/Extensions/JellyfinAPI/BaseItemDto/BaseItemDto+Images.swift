@@ -139,8 +139,22 @@ extension BaseItemDto {
         tag: String? = nil,
         requireTag: Bool = true
     ) -> URL? {
-        let scaleWidth = maxWidth.map { UIScreen.main.scale($0) }
-        let scaleHeight = maxWidth.map { UIScreen.main.scale($0) }
+        // tvOS renders its UI at a fixed 1x, so points == pixels. Read the display scale from the trait
+        // environment (the modern replacement for the now-deprecated `UIScreen.main` — this is the one part
+        // of upstream Swiftfin #2068 we adopt) but fall back to 1 when it's UNSPECIFIED: a trait collection's
+        // `displayScale` is 0.0 when read outside a trait environment — e.g. our off-main prefetch and
+        // model-owned image-source tasks — and 0 would zero the request out, so the server would return the
+        // FULL-RESOLUTION image. (Apple docs: `UITraitCollection.displayScale` "default … is 0.0
+        // (indicating unspecified)".) On tvOS the resolved value is always 1, so this matches the previous
+        // `UIScreen.main.nativeScale` behavior exactly while dropping the deprecated API.
+        let displayScale = UITraitCollection.current.displayScale
+        let pixelScale = displayScale > 0 ? displayScale : 1
+
+        let scaleWidth = maxWidth.map { Int($0 * pixelScale) }
+        // NOTE (GuamaFlix): both dimensions are mapped independently — a maxHeight-ONLY request must still
+        // send a size, else (both dims nil) the server returns the FULL-RESOLUTION image (e.g. every title
+        // logo). Upstream #2068 independently made this same fix, validating ours.
+        let scaleHeight = maxHeight.map { Int($0 * pixelScale) }
         let validQuality = quality.map { clamp($0, min: 1, max: 100) }
 
         let tag = tag ?? getImageTag(for: type)

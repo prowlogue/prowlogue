@@ -31,6 +31,30 @@ enum PlaybackBitrate: Int, CaseIterable, Displayable, Storable {
     case kbps720 = 720_000
     case kbps420 = 420_000
 
+    /// Bitrate ladder offered in the UI. "Maximum" (`.max`) is effectively uncapped (Direct Plays even
+    /// high-bitrate remuxes); the default selection is `.mbps20` (see `SwiftfinDefaults`). The presets give
+    /// a range between the two for constrained connections.
+    static var allCases: [PlaybackBitrate] {
+        [
+            .max,
+            .mbps120,
+            .mbps80,
+            .mbps60,
+            .mbps40,
+            .mbps20,
+            .mbps15,
+            .mbps10,
+            .mbps8,
+            .mbps6,
+            .mbps4,
+            .mbps3,
+            .kbps1500,
+            .kbps720,
+            .kbps420,
+            .auto
+        ]
+    }
+
     var displayTitle: String {
         switch self {
         case .auto:
@@ -70,13 +94,41 @@ enum PlaybackBitrate: Int, CaseIterable, Displayable, Storable {
 
     func getMaxBitrate() async throws -> Int {
 
+        // A fixed selection uses its stated value; "Maximum" (`.max` = 360 Mbps) is effectively uncapped, so
+        // high-bitrate sources Direct Play instead of being transcoded down.
         guard self == .auto else { return rawValue }
 
-        let bitrateTestSize = Defaults[.VideoPlayer.appMaximumBitrateTest]
-        return try await testBitrate(with: bitrateTestSize.rawValue)
+        // "Auto": measure the connection ONCE per session with the server's bitrate test, then reuse that
+        // result for the rest of the session. `AutoBitrateProbe` (session-scoped) caches the first measurement;
+        // it's dropped on sign-out / server switch (`SessionPlumbingReset` resets the `.session` scope), so a
+        // new connection re-measures. This is the stock one-shot bandwidth test, but run a SINGLE time rather
+        // than before every playback — so Auto never adds a repeated start-up delay.
+        let testSize = Defaults[.VideoPlayer.appMaximumBitrateTest].rawValue
+        return try await Container.shared.autoBitrateProbe().resolve(testSize: testSize)
+    }
+}
+
+// MARK: - Auto bitrate probe
+
+/// Measures connection bandwidth ONCE per session (the server's bitrate test) and caches the result, so
+/// "Auto" resolves instantly on every playback after the first. Session-scoped: `SessionPlumbingReset` drops
+/// the whole `.session` scope on sign-out / server switch, so a new connection re-measures. An `actor` so the
+/// cache is safe to touch from the off-main stream-build task (`MediaPlayerItem.build`).
+actor AutoBitrateProbe {
+
+    private var cachedBitrate: Int?
+
+    /// The max bitrate for "Auto": measured once, then reused for the session.
+    func resolve(testSize: Int) async throws -> Int {
+        if let cachedBitrate { return cachedBitrate }
+        let measured = try await Self.measure(testSize: testSize)
+        cachedBitrate = measured
+        return measured
     }
 
-    private func testBitrate(with testSize: Int) async throws -> Int {
+    /// The stock one-shot bandwidth test: time a fixed-size download from the server and derive bits/sec,
+    /// clamped to a sane floor/ceiling. (Formerly `PlaybackBitrate.testBitrate`; now measured once + cached.)
+    private static func measure(testSize: Int) async throws -> Int {
         precondition(testSize > 0, "testSize must be greater than zero")
 
         guard let userSession = Container.shared.currentUserSession() else {
@@ -84,11 +136,21 @@ enum PlaybackBitrate: Int, CaseIterable, Displayable, Storable {
         }
 
         let testStartTime = Date()
-        let _ = try await userSession.client.send(Paths.getBitrateTestBytes(size: testSize))
+        _ = try await userSession.client.send(Paths.getBitrateTestBytes(size: testSize))
         let testDuration = Date().timeIntervalSince(testStartTime)
         let testSizeBits = Double(testSize * 8)
         let testBitrate = testSizeBits / testDuration
 
         return clamp(Int(testBitrate), min: 1_500_000, max: Int(Int32.max))
+    }
+}
+
+extension Container {
+
+    /// Session-scoped bandwidth probe backing "Auto" — measures once, caches for the session; reset on
+    /// sign-out / server switch via `SessionPlumbingReset`'s `.session`-scope reset.
+    var autoBitrateProbe: Factory<AutoBitrateProbe> {
+        self { AutoBitrateProbe() }
+            .scope(.session)
     }
 }

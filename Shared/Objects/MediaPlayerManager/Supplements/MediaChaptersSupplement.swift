@@ -262,6 +262,23 @@ extension MediaChaptersSupplement {
             let action: () -> Void
 
             var body: some View {
+                #if os(tvOS)
+                // GuamaFlix: native `.buttonStyle(.card)` poster (chapter image is already memoized on
+                // `ChapterInfo.FullInfo`, off-main neutral backdrop, NO custom glass rim / `.posterShadow()`) —
+                // matches the rest of the app. The accent ring marks the active chapter; caption outside.
+                GuamaFlixPlayerPosterCard(
+                    itemID: nil,
+                    sourceKind: "playerChapter",
+                    blurHash: nil,
+                    fallbackSystemImage: "film",
+                    isCurrent: chapter.id == supplement.activeChapterID,
+                    action: action,
+                    makeSource: { chapter.imageSource }
+                ) {
+                    ChapterContent(chapter: chapter)
+                        .padding(.top, 8)
+                }
+                #else
                 SupplementPosterButton(
                     item: chapter,
                     action: action
@@ -269,6 +286,7 @@ extension MediaChaptersSupplement {
                     ChapterContent(chapter: chapter)
                 }
                 .isSelected(chapter.id == supplement.activeChapterID)
+                #endif
             }
         }
     }

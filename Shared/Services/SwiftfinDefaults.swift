@@ -25,7 +25,7 @@ extension UserDefaults {
     // MARK: App
 
     /// Settings that should apply to the app
-    static let appSuite = UserDefaults(suiteName: "swiftfinApp")!
+    static let appSuite = UserDefaults(suiteName: "guamaflixApp")!
 
     // MARK: User
 
@@ -39,7 +39,60 @@ extension UserDefaults {
     }
 
     static func userSuite(id: String) -> UserDefaults {
-        UserDefaults(suiteName: id)!
+        UserSuiteDefaultsCache.suite(id: id)
+    }
+}
+
+/// Memoizes user-suite `UserDefaults` instances and user-scoped `Defaults.Key`s.
+///
+/// `Defaults.Key.init` serializes its default value and synchronously calls
+/// `UserDefaults.register(defaults:)` on every construction, and the user-scoped key
+/// accessors below are computed properties — so without memoization that cost was paid
+/// on EVERY `@Default`/`Defaults[...]` access (per poster card, per player tick).
+/// Keys are cached per (userID, name), so a user/server switch naturally resolves a
+/// fresh set for the new suite; values are still read live through the key.
+private enum UserSuiteDefaultsCache {
+
+    private static let lock = NSLock()
+    private static var suites: [String: UserDefaults] = [:]
+    private static var keys: [String: Defaults.Keys] = [:]
+
+    static func suite(id: String) -> UserDefaults {
+        lock.lock()
+        defer { lock.unlock() }
+
+        if let cached = suites[id] { return cached }
+        let suite = UserDefaults(suiteName: id)!
+        suites[id] = suite
+        return suite
+    }
+
+    static func key<Value: Defaults.Serializable>(
+        _ name: String,
+        default defaultValue: Value
+    ) -> Defaults.Key<Value> {
+        let userID: String = switch Defaults[.lastSignedInUserID] {
+        case .signedOut: "default"
+        case let .signedIn(id): id
+        }
+
+        lock.lock()
+        defer { lock.unlock() }
+
+        let cacheKey = "\(userID)\u{1F}\(name)"
+        if let cached = keys[cacheKey] as? Defaults.Key<Value> {
+            return cached
+        }
+
+        let suite = suites[userID] ?? {
+            let suite = UserDefaults(suiteName: userID)!
+            suites[userID] = suite
+            return suite
+        }()
+
+        let key = Defaults.Key<Value>(name, default: defaultValue, suite: suite)
+        keys[cacheKey] = key
+        return key
     }
 }
 
@@ -54,7 +107,7 @@ private extension Defaults.Keys {
     }
 
     static func UserKey<Value: Defaults.Serializable>(_ name: String, default: Value) -> Key<Value> {
-        Key(name, default: `default`, suite: .currentUserSuite)
+        UserSuiteDefaultsCache.key(name, default: `default`)
     }
 }
 
@@ -66,7 +119,7 @@ extension Defaults.Keys {
     ///
     /// This is set externally whenever the app or user accent colors change,
     /// depending on the current app state.
-    static var accentColor: Key<Color> = AppKey("accentColor", default: .jellyfinPurple)
+    static var accentColor: Key<Color> = AppKey("accentColor", default: .white)
 
     /// The _real_ appearance key to be used.
     ///
@@ -99,7 +152,7 @@ extension Defaults.Keys {
     /// The accent color default for user contexts.
     /// Only use for `set`, use `accentColor` for `get`.
     static var userAccentColor: Key<Color> {
-        UserKey("userAccentColor", default: .jellyfinPurple)
+        UserKey("userAccentColor", default: .white)
     }
 
     /// The appearance default for user contexts.
@@ -256,6 +309,10 @@ extension Defaults.Keys {
 
     enum VideoPlayer {
 
+        // Legacy alias — shares the same storage id as `Playback.appMaximumBitrate` below. Kept in sync
+        // so reads through either path resolve to the same default. Default `.max` (uncapped → prefer Direct
+        // Play, best quality); users can lower it, or pick "Auto" (a one-shot bandwidth test, measured once
+        // per session and reused).
         static var appMaximumBitrate: Key<PlaybackBitrate> {
             UserKey("appMaximumBitrate", default: .max)
         }
@@ -360,8 +417,12 @@ extension Defaults.Keys {
         }
 
         enum Playback {
+            // Default to "Maximum" (uncapped → prefer Direct Play): full-quality remux with no transcode,
+            // fastest start, best picture. Users on a constrained network can pick a fixed cap, or "Auto"
+            // (a one-shot bandwidth test measured once per session and reused — see
+            // `PlaybackBitrate.getMaxBitrate` + `AutoBitrateProbe`).
             static var appMaximumBitrate: Key<PlaybackBitrate> {
-                UserKey("appMaximumBitrate", default: .auto)
+                UserKey("appMaximumBitrate", default: .max)
             }
 
             static var appMaximumBitrateTest: Key<PlaybackBitrateTestSize> {

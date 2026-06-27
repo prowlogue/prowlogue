@@ -40,7 +40,10 @@ extension VideoPlayer.PlaybackControls {
         @Toaster
         private var toaster: ToastProxy
 
-        private let previewImageHeight: CGFloat = 200
+        // Trickplay scrub-preview height (width scales with the video aspect ratio + the x/y offsets below
+        // derive from this, so changing it scales the whole preview). 300 = 1.5× the stock 200 (2× read too
+        // big); the tiles are a fixed server resolution so they upscale slightly.
+        private let previewImageHeight: CGFloat = 300
 
         private var sliderHeight: CGFloat {
             isScrubbing ? 20 : 14
@@ -123,7 +126,15 @@ extension VideoPlayer.PlaybackControls {
                 }
             }
             .if(chapterSlider) { view in
-                if let chapters = manager.item.fullChapterInfo, chapters.isNotEmpty {
+                // Read the chapter info RESOLVED ONCE on `MediaPlayerItem` — `BaseItemDto.fullChapterInfo`
+                // rebuilds every chapter image URL on each access, and this body re-evaluates every
+                // playback tick. The id guard keeps the brief between-items transition from masking
+                // the slider with the previous item's chapters.
+                if let playbackItem = manager.playbackItem,
+                   playbackItem.baseItem.id == manager.item.id,
+                   let chapters = playbackItem.fullChapterInfo,
+                   chapters.isNotEmpty
+                {
                     view.inverseMask { ChapterTrackMask(chapters: chapters, runtime: manager.item.runtime ?? .zero) }
                 } else {
                     view

@@ -29,6 +29,10 @@ struct ImageView<Failure: View>: View {
     private var pipeline: ImagePipeline
     private var placeholder: ((ImageSource) -> any View)?
     private var failure: Failure
+    // Optional Nuke processors applied to the load request (e.g. a downsample `Resize` for large external
+    // art). Defaults to none, so every existing caller is unaffected: an empty processors array produces the
+    // SAME Nuke cache key as a plain URL request. Set via `.processors(_:)`.
+    private var processors: [any ImageProcessing] = []
 
     @ViewBuilder
     private func _placeholder(_ currentSource: ImageSource) -> some View {
@@ -42,7 +46,10 @@ struct ImageView<Failure: View>: View {
 
     var body: some View {
         if let currentSource = sources.first {
-            LazyImage(url: currentSource.url, transaction: .init(animation: .linear)) { state in
+            LazyImage(
+                request: ImageRequest(url: currentSource.url, processors: processors),
+                transaction: .init(animation: .linear)
+            ) { state in
                 if state.isLoading {
                     _placeholder(currentSource)
                 } else if let _image = state.image {
@@ -108,6 +115,12 @@ extension ImageView {
         copy(modifying: \.pipeline, with: pipeline)
     }
 
+    /// Apply Nuke processors to the load request — chiefly a downsample `ImageProcessors.Resize` for large
+    /// external art (TMDB/plugin posters) so it's decoded at display size instead of full resolution.
+    func processors(_ processors: [any ImageProcessing]) -> Self {
+        copy(modifying: \.processors, with: processors)
+    }
+
     func placeholder(@ViewBuilder _ content: @escaping (ImageSource) -> any View) -> Self {
         copy(modifying: \.placeholder, with: content)
     }
@@ -118,7 +131,8 @@ extension ImageView {
             image: image,
             pipeline: pipeline,
             placeholder: placeholder,
-            failure: content()
+            failure: content(),
+            processors: processors
         )
     }
 }

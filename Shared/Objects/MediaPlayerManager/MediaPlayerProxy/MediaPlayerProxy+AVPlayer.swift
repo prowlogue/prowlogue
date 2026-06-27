@@ -120,8 +120,13 @@ class AVMediaPlayerProxy: VideoMediaPlayerProxy {
         player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero)
     }
 
-    // TODO: complete
-    func setRate(_ rate: Float) {}
+    func setRate(_ rate: Float) {
+        // Only adjust the speed of an already-playing player. Setting `rate` on a paused AVPlayer would
+        // start playback (rate > 0 == play), so guard on the current rate to keep this a no-op while paused.
+        guard player.rate != 0 else { return }
+        player.rate = rate
+    }
+
     func setAudioStream(_ stream: MediaStream) {}
     func setSubtitleStream(_ stream: MediaStream) {}
 
@@ -179,10 +184,17 @@ extension AVMediaPlayerProxy {
             DispatchQueue.main.async {
                 switch timeControlStatus {
                 case .paused:
+                    self.isBuffering.value = false
                     self.manager?.setPlaybackRequestStatus(status: .paused)
-                case .waitingToPlayAtSpecifiedRate: ()
-                // TODO: buffering
+                case .waitingToPlayAtSpecifiedRate:
+                    // Populate the unified `isBuffering` signal (previously an unfilled TODO) ONLY for a genuine
+                    // network stall (`.toMinimizeStalls` — the buffer ran dry and the player is waiting for the
+                    // network to catch up). Deliberately NOT `.evaluatingBufferingRate` (normal startup/progressive
+                    // buffering-rate evaluation that fires even on a fast link) nor `.noItemToPlay` — treating
+                    // those as "buffering" caused the adaptive controller to false-trigger on healthy connections.
+                    self.isBuffering.value = player.reasonForWaitingToPlay == .toMinimizeStalls
                 case .playing:
+                    self.isBuffering.value = false
                     self.manager?.setPlaybackRequestStatus(status: .playing)
                 @unknown default: ()
                 }
@@ -210,7 +222,18 @@ extension AVMediaPlayerProxy {
                     toleranceBefore: .zero,
                     toleranceAfter: .zero,
                     completionHandler: { _ in
-                        self.play()
+                        // Honour a paused initial request: when SyncPlay adopts this player into a PAUSED
+                        // group it sets the manager's status to `.paused` before we get here, so we seek to
+                        // the join position but do NOT auto-start — otherwise we'd play locally and
+                        // re-broadcast an Unpause to the whole group. Normal playback is `.playing` and
+                        // starts immediately. The server's later Unpause command resumes us in lockstep.
+                        guard self.manager?.playbackRequestStatus == .playing else { return }
+                        // Faster start: `playImmediately` begins with whatever's already buffered instead of
+                        // waiting for AVPlayer to evaluate the buffering rate (the default first-play delay).
+                        // We keep `automaticallyWaitsToMinimizeStalling` at its default `true`, so later
+                        // network stalls still auto-recover (vs. `false`, which this app would treat as a
+                        // hard pause).
+                        self.player.playImmediately(atRate: self.player.defaultRate)
                     }
                 )
             @unknown default: ()
