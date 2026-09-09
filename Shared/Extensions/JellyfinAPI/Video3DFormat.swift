@@ -9,7 +9,7 @@
 import Foundation
 import JellyfinAPI
 
-extension Video3DFormat: Displayable {
+extension Video3DFormat {
     var displayTitle: String {
         switch self {
         case .halfSideBySide:

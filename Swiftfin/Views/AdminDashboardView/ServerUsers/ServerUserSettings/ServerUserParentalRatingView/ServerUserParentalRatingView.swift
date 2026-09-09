@@ -6,6 +6,7 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
+import Defaults
 import JellyfinAPI
 import SwiftUI
 
@@ -20,11 +21,11 @@ struct ServerUserParentalRatingView: View {
     @StateObject
     private var viewModel: ServerUserAdminViewModel
     @StateObject
-    private var parentalRatingsViewModel: PagingLibraryViewModel<ParentalRatingLibrary>
+    private var parentalRatingsViewModel: ParentalRatingsViewModel
 
     init(viewModel: ServerUserAdminViewModel) {
         self._viewModel = StateObject(wrappedValue: viewModel)
-        self._parentalRatingsViewModel = StateObject(wrappedValue: .init(library: .init()))
+        self._parentalRatingsViewModel = StateObject(wrappedValue: ParentalRatingsViewModel(initialValue: []))
 
         guard let policy = viewModel.user.policy else {
             preconditionFailure("User policy cannot be empty.")
@@ -39,6 +40,7 @@ struct ServerUserParentalRatingView: View {
 
             blockUnratedItemsView
         }
+        .backport
         .toolbarTitleDisplayMode(.inline)
         .navigationTitle(L10n.parentalRatings.localizedCapitalized)
         .navigationBarCloseButton {
@@ -49,22 +51,12 @@ struct ServerUserParentalRatingView: View {
                 ProgressView()
             }
 
-            let saveAction: () -> Void = {
+            Button(L10n.save) {
                 if tempPolicy != viewModel.user.policy {
                     viewModel.updatePolicy(tempPolicy)
                 }
             }
-
-            Group {
-                if #available(iOS 26, *) {
-                    Button(L10n.save, role: .confirm, action: saveAction)
-                } else {
-                    Button(L10n.save, action: saveAction)
-                        .backport
-                        .buttonStyle(.glassProminent)
-                        .controlSize(.small)
-                }
-            }
+            .buttonStyle(.toolbarPill)
             .disabled(viewModel.user.policy == tempPolicy)
         }
         .onFirstAppear {
@@ -124,7 +116,7 @@ struct ServerUserParentalRatingView: View {
 
     private func reducedParentalRatings() -> [ParentalRating] {
         [ParentalRating(name: L10n.none, value: nil)] +
-            parentalRatingsViewModel.elements.grouped { $0.value ?? 0 }
+            parentalRatingsViewModel.value.grouped { $0.value ?? 0 }
             .map { key, group in
                 if key < 100 {
                     if key == 0 {
@@ -147,7 +139,7 @@ struct ServerUserParentalRatingView: View {
     @LabeledContentBuilder
     private func parentalRatingLabeledContent() -> AnyView {
         let reducedRatings = reducedParentalRatings()
-        let groupedRatings = parentalRatingsViewModel.elements.grouped { $0.value ?? 0 }
+        let groupedRatings = parentalRatingsViewModel.value.grouped { $0.value ?? 0 }
 
         ForEach(groupedRatings.keys.sorted(), id: \.self) { key in
             if let matchingRating = reducedRatings.first(where: { $0.value == key }) {

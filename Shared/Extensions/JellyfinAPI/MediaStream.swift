@@ -6,9 +6,10 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
-import CoreTransferable
+import Factory
 import Foundation
 import JellyfinAPI
+import VLCUI
 
 extension MediaStream {
 
@@ -16,11 +17,18 @@ extension MediaStream {
 
     static var none: MediaStream = .init(displayTitle: L10n.none, index: -1)
 
-    func url(with client: JellyfinClient) -> URL? {
-        guard let deliveryURL else { return nil }
+    // TODO: be a function that resolves against given client
+    var asVLCPlaybackChild: VLCVideoPlayer.PlaybackChild? {
+        guard let deliveryURL, let client = Container.shared.currentUserSession()?.client else { return nil }
 
         let deliveryPath = deliveryURL.removingFirst(if: client.configuration.url.absoluteString.last == "/")
-        return client.url(path: deliveryPath)
+        guard let url = client.url(path: deliveryPath) else { return nil }
+
+        return .init(
+            url: url,
+            type: .subtitle,
+            enforce: false
+        )
     }
 
     var is4kVideo: Bool {
@@ -196,159 +204,6 @@ extension MediaStream {
         if let value = path {
             (label: "Path", value: value)
         }
-    }
-}
-
-extension MediaStream: @retroactive Transferable, TextTransferable {
-
-    @ArrayBuilder<Property>
-    private var sharedTransferProperties: [Property] {
-        if let value = displayTitle {
-            (label: "Title", value: value)
-        }
-
-        if let value = language {
-            (label: "Language", value: value)
-        }
-
-        if let value = codec {
-            (label: "Codec", value: value.uppercased())
-        }
-
-        if let value = isAVC {
-            (label: "AVC", value: value ? L10n.yes : L10n.no)
-        }
-
-        if let value = profile {
-            (label: "Profile", value: value)
-        }
-    }
-
-    @ArrayBuilder<Property>
-    private var resolutionTransferProperties: [Property] {
-        if let width, let height, width > 0, height > 0 {
-            (label: "Resolution", value: width.description.multiply(by: height.description))
-        }
-    }
-
-    @ArrayBuilder<Property>
-    private var flagTransferProperties: [Property] {
-        if let value = isDefault {
-            (label: "Default", value: value ? L10n.yes : L10n.no)
-        }
-
-        if let value = isForced {
-            (label: "Forced", value: value ? L10n.yes : L10n.no)
-        }
-
-        if let value = isExternal {
-            (label: "External", value: value ? L10n.yes : L10n.no)
-        }
-    }
-
-    @ArrayBuilder<Property>
-    private var videoTransferProperties: [Property] {
-        if let value = level {
-            (label: "Level", value: value.formatted())
-        }
-
-        if let value = aspectRatio {
-            (label: "Aspect ratio", value: value)
-        }
-
-        if let value = isAnamorphic {
-            (label: "Anamorphic", value: value ? L10n.yes : L10n.no)
-        }
-
-        if let value = isInterlaced {
-            (label: "Interlaced", value: value ? L10n.yes : L10n.no)
-        }
-
-        if let value = realFrameRate ?? averageFrameRate {
-            (label: "Framerate", value: value.description)
-        }
-
-        if let value = bitRate {
-            (label: "Bitrate", value: value.formatted(.bitRate))
-        }
-
-        if let value = bitDepth {
-            (label: "Bit depth", value: "\(value) bit")
-        }
-
-        if let value = videoRange {
-            (label: "Video range", value: value.rawValue)
-        }
-
-        if let value = videoRangeType {
-            (label: "Video range type", value: value.rawValue)
-        }
-
-        if let value = pixelFormat {
-            (label: "Pixel format", value: value)
-        }
-
-        if let value = refFrames {
-            (label: "Ref frames", value: value.description)
-        }
-
-        if let value = nalLengthSize {
-            (label: "NAL", value: value)
-        }
-    }
-
-    @ArrayBuilder<Property>
-    private var audioTransferProperties: [Property] {
-        if let value = channelLayout {
-            (label: "Layout", value: value)
-        }
-
-        if let value = channels {
-            (label: "Channels", value: "\(value) ch")
-        }
-
-        if let value = bitRate {
-            (label: "Bitrate", value: value.formatted(.bitRate))
-        }
-
-        if let value = sampleRate {
-            (label: "Sample rate", value: "\(value) Hz")
-        }
-    }
-
-    @ArrayBuilder<Property>
-    var transferProperties: [Property] {
-
-        sharedTransferProperties
-
-        switch type {
-        case .video:
-            resolutionTransferProperties
-            videoTransferProperties
-        case .audio:
-            audioTransferProperties
-            flagTransferProperties
-        case .subtitle:
-            resolutionTransferProperties
-            flagTransferProperties
-        default:
-            []
-        }
-    }
-
-    public var transferTitle: String {
-        displayTitle ?? type?.displayTitle ?? .emptyDash
-    }
-
-    public var transferBody: String {
-        let properties = transferProperties
-            .map {
-                "\($0.label): \($0.value)"
-            }
-            .joined(separator: "\n")
-
-        return [type?.displayTitle ?? L10n.media, properties]
-            .joined(separator: "\n\n")
     }
 }
 

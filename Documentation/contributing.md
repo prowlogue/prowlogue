@@ -11,8 +11,11 @@
 Fork the Swiftfin repo and install the necessary dependencies:
 
 ```bash
-# install homebrew dependencies
+# install Carthage, SwiftFormat, SwiftLint, and SwiftGen with Homebrew
 $ brew bundle --file Brewfile
+
+# install or update dependencies
+$ carthage update --use-xcframeworks
 ```
 
 In the event that all of the Swift Packages cannot be installed, clean the Swift Packages cache or close and reopen Xcode to restart the process.
@@ -73,7 +76,7 @@ Documentation for advanced or complex features and other implementation reasonin
 
 Swiftfin is developed using SwiftUI. The iOS and tvOS Jellyfin clients share the same backend with each client containing their respective views. Due to this architecture, working on both clients at once may be necessary.
 
-The VLC player uses [SwiftVLC](https://github.com/harflabs/SwiftVLC) for its great codec support. Becoming familiar with SwiftVLC will be necessary for video playback development and debugging.
+Playback is done with [VLCKit](https://code.videolan.org/videolan/VLCKit) for its great codec support. Becoming familiar with VLCKit will be necessary for video playback development and debugging.
 
 ## Design
 
@@ -101,6 +104,6 @@ If you notice undesirable behavior, would like to make a UI/UX tweak, or have a 
 
 ## Intended Behaviors Due to Technical Limitations
 
-The following behaviors are intended due to current technical limitations with SwiftVLC:
+The following behaviors are intended due to current technical limitations with VLCKit:
 
-- Audio delay when starting or resuming playback may be fixed in VLCKit v4.
+- Audio delay when starting playback and un-pausing, may be fixed in VLCKit v4

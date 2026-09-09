@@ -7,13 +7,12 @@
 //
 
 import Combine
-import FactoryKit
+import Factory
 import Foundation
 import Get
 import JellyfinAPI
 import Logging
 
-@MainActor
 class ViewModel: ObservableObject {
 
     let logger = Logger.swiftfin()
@@ -28,6 +27,7 @@ class ViewModel: ObservableObject {
         Notifications[.didChangeServerConnection]
             .publisher
             .sink { [weak self] _ in
+                Container.shared.userSessionManager().refreshCurrentSession()
                 self?.$userSession.resolve(reset: .scope)
             }
             .store(in: &cancellables)
@@ -36,6 +36,7 @@ class ViewModel: ObservableObject {
     func requireUserSession() throws -> UserSession {
         guard let userSession else {
             logger.error("Missing user session for authenticated view model")
+            Container.shared.userSessionManager().refreshCurrentSession()
             throw UserSessionError.missingCurrentSession
         }
 

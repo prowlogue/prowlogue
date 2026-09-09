@@ -110,6 +110,7 @@ struct AddAccessScheduleView: View {
                 }
             }
         }
+        .backport
         .toolbarTitleDisplayMode(.inline)
         .navigationTitle(L10n.addAccessSchedule.localizedCapitalized)
         .navigationBarCloseButton {
@@ -125,15 +126,12 @@ struct AddAccessScheduleView: View {
             }
 
             if viewModel.background.is(.updating) {
-                Button(L10n.cancel, role: .cancel) {
+                Button(L10n.cancel) {
                     viewModel.cancel()
                 }
-                .foregroundStyle(.primary, .secondary)
-                .backport
-                .buttonStyle(.glass)
-                .controlSize(.small)
+                .buttonStyle(.toolbarPill(.red))
             } else {
-                let saveAction: () -> Void = {
+                Button(L10n.save) {
                     if let newSchedule {
                         tempPolicy.accessSchedules = tempPolicy.accessSchedules
                             .appendedOrInit(newSchedule)
@@ -141,17 +139,7 @@ struct AddAccessScheduleView: View {
                         viewModel.updatePolicy(tempPolicy)
                     }
                 }
-
-                Group {
-                    if #available(iOS 26, *) {
-                        Button(L10n.save, role: .confirm, action: saveAction)
-                    } else {
-                        Button(L10n.save, action: saveAction)
-                            .backport
-                            .buttonStyle(.glassProminent)
-                            .controlSize(.small)
-                    }
-                }
+                .buttonStyle(.toolbarPill)
                 .disabled(!isValidRange || isDuplicateSchedule)
             }
         }

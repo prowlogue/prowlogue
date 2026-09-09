@@ -16,7 +16,7 @@ struct EditMetadataView: View {
     private var router
 
     @ObservedObject
-    private var viewModel: ItemEditorViewModel
+    private var viewModel: ItemEditorViewModel<BaseItemDto>
 
     @Binding
     private var item: BaseItemDto
@@ -26,7 +26,7 @@ struct EditMetadataView: View {
 
     private let itemType: BaseItemKind
 
-    init(viewModel: ItemEditorViewModel) {
+    init(viewModel: ItemEditorViewModel<BaseItemDto>) {
         self.viewModel = viewModel
         self._item = Binding(get: { viewModel.item }, set: { viewModel.item = $0 })
         self._tempItem = State(initialValue: viewModel.item)
@@ -39,27 +39,17 @@ struct EditMetadataView: View {
     var body: some View {
         contentView
             .navigationTitle(L10n.metadata)
-            .toolbarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.inline)
             .topBarTrailing {
                 if viewModel.background.states.contains(.updating) {
                     ProgressView()
                 }
 
-                let saveAction: () -> Void = {
+                Button(L10n.save) {
                     item = tempItem
                     viewModel.update(tempItem)
                 }
-
-                Group {
-                    if #available(iOS 26, *) {
-                        Button(L10n.save, role: .confirm, action: saveAction)
-                    } else {
-                        Button(L10n.save, action: saveAction)
-                            .backport
-                            .buttonStyle(.glassProminent)
-                            .controlSize(.small)
-                    }
-                }
+                .buttonStyle(.toolbarPill)
                 .disabled(viewModel.item == tempItem)
             }
             .navigationBarCloseButton {

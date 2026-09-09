@@ -62,8 +62,8 @@ extension VideoPlayer.PlaybackControls {
             .onAppear {
                 getImage(for: scrubbedSeconds)
             }
-            .onChange(of: scrubbedSeconds) {
-                let newIndex = previewImageProvider.imageIndex(for: scrubbedSeconds)
+            .onChange(of: scrubbedSeconds) { newValue in
+                let newIndex = previewImageProvider.imageIndex(for: newValue)
 
                 if newIndex != image?.index {
                     getImage(for: scrubbedSeconds)

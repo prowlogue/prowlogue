@@ -7,6 +7,7 @@
 //
 
 import Defaults
+import JellyfinAPI
 import SwiftUI
 
 struct ProgressIndicator: View {
@@ -14,51 +15,28 @@ struct ProgressIndicator: View {
     @Default(.accentColor)
     private var accentColor
 
-    let title: String
-    let progress: Double
-    let posterDisplayType: PosterDisplayType
+    let progress: CGFloat
+    let height: CGFloat
 
-    @ViewBuilder
-    private var compactView: some View {
-        Rectangle()
-            .fill(accentColor)
-            .scaleEffect(x: progress, y: 1, anchor: .leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(height: 6)
-    }
-
-    @ViewBuilder
-    private var regularView: some View {
-        VStack(alignment: .leading, spacing: 5) {
-
-            Text(title)
-                .font(.system(.footnote, design: .rounded))
-                .fontWeight(.medium)
-
-            ProgressView(value: progress)
-                .progressViewStyle(.playback)
-                .foregroundStyle(accentColor)
-                .frame(height: 6)
-        }
-        .padding(.bottom, 5)
-        .padding(.horizontal, 5)
-        .background(extendedBy: .init(top: 5, leading: 0, bottom: 0, trailing: 0)) {
-            Rectangle()
-                .fill(Color.black)
-                .mask(gradient: .linear) {
-                    (location: 0, opacity: 0)
-                    (location: 0.5, opacity: 0.7)
-                    (location: 1, opacity: 1)
-                }
-        }
-        .colorScheme(.dark)
-    }
+    // Very thin outline on the top and trailing edges of the filled bar so it
+    // stays visible against light/white poster artwork. Sized by width (rather
+    // than scaleEffect) so the right border keeps a constant thickness.
+    private let borderWidth: CGFloat = 1
+    private let borderColor = Color.black.opacity(0.4)
 
     var body: some View {
-        if posterDisplayType != .landscape {
-            compactView
-        } else {
-            regularView
+        GeometryReader { proxy in
+            accentColor
+                .frame(width: proxy.size.width * progress, height: height)
+                .overlay(alignment: .top) {
+                    borderColor
+                        .frame(height: borderWidth)
+                }
+                .overlay(alignment: .trailing) {
+                    borderColor
+                        .frame(width: borderWidth)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
         }
     }
 }

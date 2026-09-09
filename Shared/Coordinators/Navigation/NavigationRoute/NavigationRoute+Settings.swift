@@ -14,40 +14,52 @@ extension NavigationRoute {
 
     static func actionBarButtonSelector(selectedButtonsBinding: Binding<[VideoPlayerActionButton]>) -> NavigationRoute {
         NavigationRoute(id: "actionBarButtonSelector") {
+            // Native rebuild on tvOS; original `OrderedSectionSelectorView` left intact for iOS.
+            #if os(tvOS)
+            NativeOrderedSectionSelectorView(
+                title: L10n.barButtons.localizedCapitalized,
+                selection: selectedButtonsBinding,
+                sources: VideoPlayerActionButton.allCases
+            )
+            #else
             OrderedSectionSelectorView(selection: selectedButtonsBinding, sources: VideoPlayerActionButton.allCases)
                 .navigationTitle(L10n.barButtons.localizedCapitalized)
+            #endif
         }
     }
 
     static func actionMenuButtonSelector(selectedButtonsBinding: Binding<[VideoPlayerActionButton]>) -> NavigationRoute {
         NavigationRoute(id: "actionMenuButtonSelector") {
+            #if os(tvOS)
+            NativeOrderedSectionSelectorView(
+                title: L10n.menuButtons.localizedCapitalized,
+                selection: selectedButtonsBinding,
+                sources: VideoPlayerActionButton.allCases
+            )
+            #else
             OrderedSectionSelectorView(selection: selectedButtonsBinding, sources: VideoPlayerActionButton.allCases)
                 .navigationTitle(L10n.menuButtons.localizedCapitalized)
-        }
-    }
-
-    static func itemActionBarButtonSelector(selectedButtonsBinding: Binding<[ItemActionButton]>) -> NavigationRoute {
-        NavigationRoute(id: "itemActionBarButtonSelector") {
-            OrderedSectionSelectorView(selection: selectedButtonsBinding, sources: ItemActionButton.allCases)
-                .navigationTitle(L10n.barButtons.localizedCapitalized)
-        }
-    }
-
-    static func itemActionMenuButtonSelector(selectedButtonsBinding: Binding<[ItemActionButton]>) -> NavigationRoute {
-        NavigationRoute(id: "itemActionMenuButtonSelector") {
-            OrderedSectionSelectorView(selection: selectedButtonsBinding, sources: ItemActionButton.allCases)
-                .navigationTitle(L10n.menuButtons.localizedCapitalized)
+            #endif
         }
     }
 
     static func supplementSelector(selectedSupplementsBinding: Binding<[VideoPlayerSupplement]>) -> NavigationRoute {
         NavigationRoute(id: "supplementSelector") {
+            #if os(tvOS)
+            NativeOrderedSectionSelectorView(
+                title: L10n.supplements.localizedCapitalized,
+                selection: selectedSupplementsBinding,
+                sources: VideoPlayerSupplement.allCases,
+                removable: VideoPlayerSupplement.allCases.subtracting(VideoPlayerSupplement.supportedCases)
+            )
+            #else
             OrderedSectionSelectorView(
                 selection: selectedSupplementsBinding,
                 sources: VideoPlayerSupplement.allCases,
                 removable: VideoPlayerSupplement.allCases.subtracting(VideoPlayerSupplement.supportedCases)
             )
             .navigationTitle(L10n.supplements.localizedCapitalized)
+            #endif
         }
     }
 
@@ -130,10 +142,18 @@ extension NavigationRoute {
 
     static func editLocalServer(server: ServerState, isEditing: Bool = false) -> NavigationRoute {
         NavigationRoute(id: "editServer") {
+            // Native rebuild on tvOS; original `EditLocalServerView` left intact for iOS.
+            #if os(tvOS)
+            NativeEditLocalServerView(
+                server: server,
+                isDeletePresented: isEditing
+            )
+            #else
             EditLocalServerView(
                 server: server,
                 isDeletePresented: isEditing
             )
+            #endif
         }
     }
 
@@ -142,7 +162,12 @@ extension NavigationRoute {
         NavigationRoute(
             id: "serverConnections-\(viewModel.server.id)"
         ) {
-            ServerConnectionView(viewModel: viewModel)
+            // Native rebuild on tvOS; original `ServerConnectionsView` left intact for iOS.
+            #if os(tvOS)
+            NativeServerConnectionsView(viewModel: viewModel)
+            #else
+            ServerConnectionsView(viewModel: viewModel)
+            #endif
         }
     }
 
@@ -155,10 +180,18 @@ extension NavigationRoute {
             id: "serverConnection-\(viewModel.server.id)-\(connection.id)",
             style: .sheet
         ) {
+            // Native rebuild on tvOS; original `EditServerConnectionView` left intact for iOS.
+            #if os(tvOS)
+            NativeEditServerConnectionView(
+                viewModel: viewModel,
+                connection: connection
+            )
+            #else
             EditServerConnectionView(
                 viewModel: viewModel,
                 connection: connection
             )
+            #endif
         }
     }
 
@@ -172,7 +205,12 @@ extension NavigationRoute {
 
     static func fontPicker(selection: Binding<String>) -> NavigationRoute {
         NavigationRoute(id: "fontPicker") {
+            // Native rebuild on tvOS; original `FontPickerView` left intact for iOS.
+            #if os(tvOS)
+            NativeFontPickerView(selection: selection)
+            #else
             FontPickerView(selection: selection)
+            #endif
         }
     }
 
@@ -185,30 +223,6 @@ extension NavigationRoute {
         }
     }
     #endif
-
-    static var itemSettings: NavigationRoute {
-        NavigationRoute(
-            id: "itemSettings"
-        ) {
-            CustomizeSettingsView.ItemSection()
-        }
-    }
-
-    static var librarySettings: NavigationRoute {
-        NavigationRoute(
-            id: "librarySettings"
-        ) {
-            CustomizeSettingsView.LibrarySection()
-        }
-    }
-
-    static var posterSettings: NavigationRoute {
-        NavigationRoute(
-            id: "posterSettings"
-        ) {
-            CustomizeSettingsView.PosterSection()
-        }
-    }
 
     static var indicatorSettings: NavigationRoute {
         NavigationRoute(
@@ -237,14 +251,24 @@ extension NavigationRoute {
             id: "localUserSecurity"
         ) {
             WithUserAuthentication {
+                // Native rebuild on tvOS; original `LocalUserSecurityView` left intact for iOS.
+                #if os(tvOS)
+                NativeLocalUserSecurityView()
+                #else
                 LocalUserSecurityView()
+                #endif
             }
         }
     }
 
     static func localUserSettings(user: UserDto) -> NavigationRoute {
         NavigationRoute(id: "localUserSettings") {
+            // Native rebuild on tvOS; original `LocalUserSettingsView` left intact for iOS.
+            #if os(tvOS)
+            NativeLocalUserSettingsView(user: user)
+            #else
             LocalUserSettingsView(user: user)
+            #endif
         }
     }
 
@@ -252,7 +276,13 @@ extension NavigationRoute {
         NavigationRoute(
             id: "log"
         ) {
+            #if os(tvOS)
+            // tvOS: compact custom title + hidden system nav title (which wasted space and let log rows scroll
+            // behind it). iOS keeps the stock PulseUI console. See `ProwlogueLogsView`.
+            ProwlogueLogsView()
+            #else
             ConsoleView()
+            #endif
         }
     }
 
@@ -288,7 +318,12 @@ extension NavigationRoute {
         NavigationRoute(
             id: "videoPlayerSettings"
         ) {
+            // Native rebuild on tvOS; original `VideoPlayerSettingsView` left intact for iOS.
+            #if os(tvOS)
+            NativeVideoPlayerSettingsView()
+            #else
             VideoPlayerSettingsView()
+            #endif
         }
     }
 }

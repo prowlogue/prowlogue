@@ -100,7 +100,7 @@ extension MediaChaptersSupplement {
             // TODO: Scroll to current chapter
             CollectionVGrid(
                 uniqueElements: chapters,
-                id: \.id,
+                id: \.unwrappedIDHashOrZero,
                 layout: .columns(
                     1,
                     insets: .init(EdgeInsets.edgePadding)
@@ -116,7 +116,7 @@ extension MediaChaptersSupplement {
             //            .onAppear {
             //                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             //                    guard let currentChapter else { return }
-            //                    collectionVGridProxy.scrollTo(id: currentChapter.id, animated: false)
+            //                    collectionVGridProxy.scrollTo(id: currentChapter.unwrappedIDHashOrZero, animated: false)
             //                }
             //            }
         }
@@ -126,7 +126,7 @@ extension MediaChaptersSupplement {
             // TODO: Scroll to current chapter
             CollectionHStack(
                 uniqueElements: chapters,
-                id: \.id,
+                id: \.unwrappedIDHashOrZero,
                 layout: .minimumWidth(columnWidth: 170, rows: 1)
             ) { chapter in
                 ChapterButton(supplement: supplement, chapter: chapter) {
@@ -143,7 +143,7 @@ extension MediaChaptersSupplement {
             //            .onAppear {
             //                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             //                    guard let currentChapter else { return }
-            //                    collectionHStackProxy.scrollTo(id: currentChapter.id, animated: false)
+            //                    collectionHStackProxy.scrollTo(id: currentChapter.unwrappedIDHashOrZero, animated: false)
             //                }
             //            }
         }
@@ -151,7 +151,7 @@ extension MediaChaptersSupplement {
         var tvOSView: some View {
             CollectionHStack(
                 uniqueElements: chapters,
-                id: \.id,
+                id: \.unwrappedIDHashOrZero,
                 layout: .grid(columns: 5, rows: 1, columnTrailingInset: 0)
 //                layout: .minimumWidth(columnWidth: 170, rows: 1)
             ) { chapter in
@@ -165,7 +165,7 @@ extension MediaChaptersSupplement {
             //            .onAppear {
             //                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             //                    guard let currentChapter else { return }
-            //                    collectionHStackProxy.scrollTo(id: currentChapter.id, animated: false)
+            //                    collectionHStackProxy.scrollTo(id: currentChapter.unwrappedIDHashOrZero, animated: false)
             //                }
             //            }
             .ignoresSafeArea(.container, edges: .horizontal)
@@ -186,7 +186,8 @@ extension MediaChaptersSupplement {
             var body: some View {
                 PosterImage(
                     item: chapter,
-                    type: .landscape
+                    type: .landscape,
+                    contentMode: .fill
                 )
                 .overlay {
                     if isSelected {
@@ -199,7 +200,7 @@ extension MediaChaptersSupplement {
                     }
                 }
                 .posterStyle(.landscape)
-                .subtleShadow()
+                .posterShadow()
                 .hoverEffect(.highlight)
             }
         }
@@ -261,13 +262,31 @@ extension MediaChaptersSupplement {
             let action: () -> Void
 
             var body: some View {
-                PosterButton(
+                #if os(tvOS)
+                // Prowlogue: native `.buttonStyle(.card)` poster (chapter image is already memoized on
+                // `ChapterInfo.FullInfo`, off-main neutral backdrop, NO custom glass rim / `.posterShadow()`) —
+                // matches the rest of the app. The accent ring marks the active chapter; caption outside.
+                ProwloguePlayerPosterCard(
+                    itemID: nil,
+                    sourceKind: "playerChapter",
+                    blurHash: nil,
+                    fallbackSystemImage: "film",
+                    isCurrent: chapter.id == supplement.activeChapterID,
+                    action: action,
+                    makeSource: { chapter.imageSource }
+                ) {
+                    ChapterContent(chapter: chapter)
+                        .padding(.top, 8)
+                }
+                #else
+                SupplementPosterButton(
                     item: chapter,
-                    displayType: .landscape
-                ) { _ in
-                    action()
+                    action: action
+                ) {
+                    ChapterContent(chapter: chapter)
                 }
                 .isSelected(chapter.id == supplement.activeChapterID)
+                #endif
             }
         }
     }

@@ -17,18 +17,27 @@ struct ServerActivityFilterView: View {
     @Router
     private var router
 
-    private let environment: Binding<ServerActivityLibrary.Environment>
+    // MARK: - State Objects
+
+    @ObservedObject
+    private var viewModel: ServerActivityViewModel
 
     // MARK: - Dialog States
 
     @State
-    private var tempDate: Date
+    private var tempDate: Date?
 
     // MARK: - Initializer
 
-    init(environment: Binding<ServerActivityLibrary.Environment>) {
-        self.environment = environment
-        self.tempDate = environment.wrappedValue.minDate ?? .now
+    init(viewModel: ServerActivityViewModel) {
+
+        self.viewModel = viewModel
+
+        if let minDate = viewModel.minDate {
+            tempDate = minDate
+        } else {
+            tempDate = .now
+        }
     }
 
     // MARK: - Body
@@ -38,7 +47,7 @@ struct ServerActivityFilterView: View {
             Section {
                 DatePicker(
                     L10n.date,
-                    selection: $tempDate,
+                    selection: $tempDate.coalesce(.now),
                     in: ...Date.now,
                     displayedComponents: .date
                 )
@@ -47,54 +56,33 @@ struct ServerActivityFilterView: View {
             }
 
             /// Reset button to remove the filter
-            if environment.wrappedValue.minDate != nil {
+            if viewModel.minDate != nil {
                 Section {
-                    Button(role: .destructive) {
-                        environment.wrappedValue.minDate = nil
+                    Button(L10n.reset, role: .destructive) {
+                        viewModel.minDate = nil
                         router.dismiss()
-                    } label: {
-                        Text(L10n.reset)
-                            .frame(maxWidth: .infinity)
                     }
-                    .listRowInsets(.zero)
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                    .fontWeight(.semibold)
-                    .backport
-                    .buttonStyle(.glassProminent.shadow(false))
-                    #if os(iOS)
-                    .controlSize(.large)
-                    #endif
+                    .buttonStyle(.primary)
                 } footer: {
                     Text(L10n.resetFilterFooter)
                 }
             }
         }
         .navigationTitle(L10n.startDate.localizedCapitalized)
-        .toolbarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.inline)
         .navigationBarCloseButton {
             router.dismiss()
         }
         .topBarTrailing {
             let startOfDay = Calendar.current
-                .startOfDay(for: tempDate)
+                .startOfDay(for: tempDate ?? .now)
 
-            let saveAction: () -> Void = {
-                environment.wrappedValue.minDate = startOfDay
+            Button(L10n.save) {
+                viewModel.minDate = startOfDay
                 router.dismiss()
             }
-
-            Group {
-                if #available(iOS 26, *) {
-                    Button(L10n.save, role: .confirm, action: saveAction)
-                } else {
-                    Button(L10n.save, action: saveAction)
-                        .backport
-                        .buttonStyle(.glassProminent)
-                        .controlSize(.small)
-                }
-            }
-            .disabled(environment.wrappedValue.minDate != nil && startOfDay == environment.wrappedValue.minDate)
+            .buttonStyle(.toolbarPill)
+            .disabled(viewModel.minDate != nil && startOfDay == viewModel.minDate)
         }
     }
 }

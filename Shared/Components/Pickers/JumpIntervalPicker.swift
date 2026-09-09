@@ -16,40 +16,61 @@ struct JumpIntervalPicker: View {
     @State
     private var customSeconds: Int = 0
     @State
-    private var isPresentingCustomInterval: Bool = false
+    private var isPresentingCustomInterval = false
 
     let title: String
     let selection: Binding<MediaJumpInterval>
 
     @ViewBuilder
     private var picker: some View {
-        Picker(
-            title,
-            selection: selection
-                .map(
-                    getter: {
-                        if case .custom = $0 {
-                            .zero
-                        } else {
-                            $0.rawValue
+        if #available(iOS 18.0, tvOS 18.0, *) {
+            Picker(
+                title,
+                selection: selection
+                    .map(
+                        getter: {
+                            if case .custom = $0 { .zero } else { $0.rawValue }
+                        },
+                        setter: {
+                            MediaJumpInterval(rawValue: $0)
                         }
-                    },
-                    setter: {
-                        MediaJumpInterval(rawValue: $0)
-                    }
-                )
-        ) {
-            ForEach(MediaJumpInterval.allCases, id: \.hashValue) { interval in
-                Text(interval.rawValue, format: .minuteSecondsNarrow)
-                    .tag(interval.rawValue)
+                    )
+            ) {
+                ForEach(MediaJumpInterval.allCases, id: \.hashValue) { interval in
+                    Text(interval.rawValue, format: .minuteSecondsNarrow)
+                        .tag(interval.rawValue)
+                }
+
+                Divider()
+
+                Text(L10n.custom)
+                    .tag(Duration.zero)
+            } currentValueLabel: {
+                Text(selection.wrappedValue.rawValue, format: .minuteSecondsNarrow)
             }
+        } else {
+            Picker(
+                title,
+                selection: selection
+                    .map(
+                        getter: {
+                            if case .custom = $0 { .zero } else { $0.rawValue }
+                        },
+                        setter: {
+                            MediaJumpInterval(rawValue: $0)
+                        }
+                    )
+            ) {
+                ForEach(MediaJumpInterval.allCases, id: \.hashValue) { interval in
+                    Text(interval.rawValue, format: .minuteSecondsNarrow)
+                        .tag(interval.rawValue)
+                }
 
-            Divider()
+                Divider()
 
-            Text(L10n.custom)
-                .tag(Duration.zero)
-        } currentValueLabel: {
-            Text(selection.wrappedValue.rawValue, format: .minuteSecondsNarrow)
+                Text(L10n.custom)
+                    .tag(Duration.zero)
+            }
         }
     }
 
@@ -66,6 +87,7 @@ struct JumpIntervalPicker: View {
 
     var body: some View {
         content
+            .backport
             .onChange(of: selection.wrappedValue) { oldValue, newValue in
                 if case let .custom(interval) = newValue {
                     if interval == .zero {

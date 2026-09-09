@@ -8,30 +8,30 @@
 
 import SwiftUI
 
-struct NavigationBarDrawerView<Content: View, Drawer: View>: PlatformViewControllerRepresentable {
+struct NavigationBarDrawerView<Content: View, Drawer: View>: UIViewControllerRepresentable {
 
-    private let drawer: Drawer
-    private let content: Content
+    private let buttons: () -> Drawer
+    private let content: () -> Content
 
     init(
-        @ViewBuilder drawer: @escaping () -> Drawer,
+        @ViewBuilder buttons: @escaping () -> Drawer,
         @ViewBuilder content: @escaping () -> Content
     ) {
-        self.drawer = drawer()
-        self.content = content()
+        self.buttons = buttons
+        self.content = content
     }
 
     func makeUIViewController(context: Context) -> UINavigationBarDrawerHostingController<Content, Drawer> {
-        UINavigationBarDrawerHostingController<Content, Drawer>(drawer: drawer, content: content)
+        UINavigationBarDrawerHostingController<Content, Drawer>(buttons: buttons, content: content)
     }
 
     func updateUIViewController(_ uiViewController: UINavigationBarDrawerHostingController<Content, Drawer>, context: Context) {}
 }
 
-class UINavigationBarDrawerHostingController<Content: View, Drawer: View>: UIViewController {
+class UINavigationBarDrawerHostingController<Content: View, Drawer: View>: UIHostingController<Content> {
 
-    private let drawer: Drawer
-    private let content: Content
+    private let drawer: () -> Drawer
+    private let content: () -> Content
 
     // TODO: see if we can get the height instead from the view passed in
     private let drawerHeight: CGFloat = 36
@@ -42,28 +42,21 @@ class UINavigationBarDrawerHostingController<Content: View, Drawer: View>: UIVie
         return blurView
     }()
 
-    private lazy var contentView: UIHostingController<Content> = {
-        let contentView = UIHostingController(rootView: content)
-        contentView.view.translatesAutoresizingMaskIntoConstraints = false
-        contentView.view.backgroundColor = nil
-        return contentView
-    }()
-
     private lazy var drawerButtonsView: UIHostingController<Drawer> = {
-        let drawerButtonsView = UIHostingController(rootView: drawer)
+        let drawerButtonsView = UIHostingController(rootView: drawer())
         drawerButtonsView.view.translatesAutoresizingMaskIntoConstraints = false
         drawerButtonsView.view.backgroundColor = nil
         return drawerButtonsView
     }()
 
     init(
-        drawer: Drawer,
-        content: Content
+        buttons: @escaping () -> Drawer,
+        content: @escaping () -> Content
     ) {
-        self.drawer = drawer
+        self.drawer = buttons
         self.content = content
 
-        super.init(nibName: nil, bundle: nil)
+        super.init(rootView: content())
     }
 
     @available(*, unavailable)
@@ -76,22 +69,11 @@ class UINavigationBarDrawerHostingController<Content: View, Drawer: View>: UIVie
 
         view.backgroundColor = nil
 
-        addChild(contentView)
-        view.addSubview(contentView.view)
-        contentView.didMove(toParent: self)
-
         view.addSubview(blurView)
 
         addChild(drawerButtonsView)
         view.addSubview(drawerButtonsView.view)
         drawerButtonsView.didMove(toParent: self)
-
-        NSLayoutConstraint.activate([
-            contentView.view.topAnchor.constraint(equalTo: view.topAnchor),
-            contentView.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            contentView.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            contentView.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-        ])
 
         NSLayoutConstraint.activate([
             drawerButtonsView.view.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: -drawerHeight),
@@ -106,11 +88,6 @@ class UINavigationBarDrawerHostingController<Content: View, Drawer: View>: UIVie
             blurView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             blurView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
-
-        // The filter drawer sits visually at the top of the screen but is added as an overlay subview,
-        // so by default VoiceOver reads it last.
-        // Explicitly order the drawer before the content so it is announced near the navigation bar where users expect it.
-        view.accessibilityElements = [drawerButtonsView.view as Any, contentView.view as Any]
     }
 
     override func viewWillAppear(_ animated: Bool) {

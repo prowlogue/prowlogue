@@ -7,39 +7,50 @@
 //
 
 import BlurHashKit
-import Nuke
 import SwiftUI
 
-struct PosterImage<Element: Poster>: View {
+/// Retrieving images by exact pixel dimensions is a bit
+/// intense for normal usage and eases cache usage and modifications.
+///
+/// tvOS reports a screen scale of 1.0 (unlike Retina iOS, which scales these
+/// up 2–3×), so it would otherwise fetch these literal small widths and upscale
+/// them onto large 4K posters — appearing blurry. Request larger widths on tvOS.
+#if os(tvOS)
+private let landscapeMaxWidth: CGFloat = 850
+private let portraitMaxWidth: CGFloat = 600
+#else
+private let landscapeMaxWidth: CGFloat = 300
+private let portraitMaxWidth: CGFloat = 200
+#endif
 
-    @Environment(\.self)
-    private var environment
+struct PosterImage<Item: Poster>: View {
 
     private let contentMode: ContentMode
-    private let element: Element
-    private var pipeline: ImagePipeline
-    private let size: PosterDisplayType.Size
-    private let displayType: PosterDisplayType
+    private let imageMaxWidth: CGFloat
+    private let item: Item
+    private let type: PosterDisplayType
 
     init(
-        item: Element,
+        item: Item,
         type: PosterDisplayType,
-        size: PosterDisplayType.Size = .small,
-        contentMode: ContentMode = .fill
+        contentMode: ContentMode = .fill,
+        maxWidth: CGFloat? = nil
     ) {
         self.contentMode = contentMode
-        self.displayType = type
-        self.element = item
-        self.pipeline = .shared
-        self.size = size
+        self.imageMaxWidth = maxWidth ?? (type == .landscape ? landscapeMaxWidth : portraitMaxWidth)
+        self.item = item
+        self.type = type
     }
 
     private var imageSources: [ImageSource] {
-        element.imageSources(
-            for: displayType,
-            size: size,
-            environment: element.resolveEnvironment(environment)
-        )
+        switch type {
+        case .landscape:
+            item.landscapeImageSources(maxWidth: imageMaxWidth, quality: 90)
+        case .portrait:
+            item.portraitImageSources(maxWidth: imageMaxWidth, quality: 90)
+        case .square:
+            item.squareImageSources(maxWidth: imageMaxWidth, quality: 90)
+        }
     }
 
     var body: some View {
@@ -51,42 +62,38 @@ struct PosterImage<Element: Poster>: View {
                 Color.clear
             } content: {
                 ImageView(imageSources)
-                    .pipeline(pipeline)
-                    .image { image in
-                        element.transform(image: image, displayType: displayType)
-                    }
+                    .image(item.transform)
                     .placeholder { imageSource in
                         if let blurHash = imageSource.blurHash {
-                            Image(
-                                blurHash: blurHash,
-                                size: .init(width: 8, height: 8)
-                            )?
-                                .resizable()
+                            BlurHashView(blurHash: blurHash)
+                        } else if item.showTitle {
+                            SystemImageContentView(
+                                systemName: item.systemImage
+                            )
                         } else {
                             SystemImageContentView(
-                                systemName: element.systemImage
+                                title: item.displayTitle,
+                                systemName: item.systemImage
                             )
                         }
                     }
                     .failure {
-                        SystemImageContentView(
-                            systemName: element.systemImage
-                        )
+                        if item.showTitle {
+                            SystemImageContentView(
+                                systemName: item.systemImage
+                            )
+                        } else {
+                            SystemImageContentView(
+                                title: item.displayTitle,
+                                systemName: item.systemImage
+                            )
+                        }
                     }
-                    .accessibilityRemoveTraits(.isImage)
-                    .accessibilityIgnoresInvertColors()
             }
         }
         .posterStyle(
-            displayType,
+            type,
             contentMode: contentMode
         )
-    }
-}
-
-extension PosterImage {
-
-    func pipeline(_ pipeline: ImagePipeline) -> Self {
-        copy(modifying: \.pipeline, with: pipeline)
     }
 }

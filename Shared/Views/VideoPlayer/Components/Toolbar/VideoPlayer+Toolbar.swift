@@ -13,17 +13,6 @@ extension VideoPlayer.PlaybackControls {
 
     struct Toolbar: View {
 
-        static let buttonSize: CGFloat = UIDevice.isTV ? 56 : 44
-        static let supplementButtonSpacing: CGFloat = UIDevice.isTV ? 20 : 10
-
-        static var buttonSpacing: CGFloat {
-            if UIDevice.supportsLiquidGlass {
-                supplementButtonSpacing
-            } else {
-                UIDevice.isTV ? 16 : 0
-            }
-        }
-
         @EnvironmentObject
         private var containerState: VideoPlayerContainerState
         @EnvironmentObject
@@ -33,7 +22,15 @@ extension VideoPlayer.PlaybackControls {
         private var router
 
         private var fontSize: CGFloat {
-            UIDevice.isTV ? 30 : 24
+            UIDevice.isTV ? 34 : 24
+        }
+
+        private func onPressed(isPressed: Bool) {
+            if isPressed {
+                containerState.timer.stop()
+            } else {
+                containerState.timer.poke()
+            }
         }
 
         @ViewBuilder
@@ -47,7 +44,7 @@ extension VideoPlayer.PlaybackControls {
                 }
             } label: {
                 AlternateLayoutView {
-                    Label(L10n.close, systemImage: "xmark")
+                    Image(systemName: "xmark")
                 } content: {
                     Label(
                         L10n.close,
@@ -58,45 +55,26 @@ extension VideoPlayer.PlaybackControls {
             }
         }
 
-        @ViewBuilder
-        private var content: some View {
+        var body: some View {
             HStack(alignment: UIDevice.isTV ? .bottom : .center) {
 
                 if !UIDevice.isTV {
                     closeButton
-                        .frame(width: Self.buttonSize, height: Self.buttonSize)
-                        .modifier(OverlayBarButtonStyleModifier())
                 }
 
                 TitleView(item: manager.item)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 ActionButtons()
-                    .frame(height: Self.buttonSize)
-                    .padding(.horizontal)
-            }
-        }
-
-        var body: some View {
-            Group {
-                #if os(iOS)
-                if #available(iOS 26.0, *), UIDevice.supportsLiquidGlass {
-                    GlassEffectContainer {
-                        content
-                    }
-                } else {
-                    content
-                }
-                #else
-                content
-                #endif
+                    .frame(height: fontSize)
+                    .padding()
             }
             .font(.system(size: fontSize, weight: .semibold))
-            .menuStyle(OverlayMenuStyle())
+            .buttonStyle(OverlayButtonStyle(onPressed: onPressed))
             #if os(iOS)
-            .background {
-                EmptyHitTestView()
-            }
+                .background {
+                    EmptyHitTestView()
+                }
             #endif
         }
     }

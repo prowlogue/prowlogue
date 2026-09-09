@@ -8,102 +8,43 @@
 
 import SwiftUI
 
-extension View {
+struct BackgroundParallaxHeaderModifier<Header: View>: ViewModifier {
 
-    @ViewBuilder
-    func backgroundParallaxHeader(
-        multiplier: CGFloat = 1,
-        @ViewBuilder header: @escaping () -> some View
-    ) -> some View {
-        modifier(
-            BackgroundParallaxHeaderModifier(
-                multiplier: multiplier,
-                header: header
-            )
-        )
-    }
-}
-
-struct BackgroundParallaxHeaderModifier<Background: View>: ViewModifier {
-
-    @Environment(\.frameForParentView)
-    private var frameForParentView
+    @Binding
+    private var scrollViewOffset: CGFloat
 
     @State
-    private var contentFrame: CGRect = .zero
-    @State
-    private var headerSize: CGSize = .zero
+    private var contentSize: CGSize = .zero
 
-    private let background: Background
+    private let height: CGFloat
     private let multiplier: CGFloat
+    private let header: () -> Header
 
     init(
+        _ scrollViewOffset: Binding<CGFloat>,
+        height: CGFloat,
         multiplier: CGFloat = 1,
-        @ViewBuilder header: @escaping () -> Background
+        @ViewBuilder header: @escaping () -> Header
     ) {
-        self.background = header()
+        self._scrollViewOffset = scrollViewOffset
+        self.height = height
         self.multiplier = multiplier
-    }
-
-    private var scrollViewOffset: CGFloat {
-        -contentFrame.minY
-    }
-
-    private var scrollViewSafeAreaInsets: EdgeInsets {
-        frameForParentView[.scrollView, default: .zero].safeAreaInsets
-    }
-
-    private var maskHeight: CGFloat {
-        max(0, contentFrame.height + scrollViewSafeAreaInsets.top - offset)
-    }
-
-    private var offset: CGFloat {
-        let position = scrollViewOffset + frameForParentView[.navigationStack, default: .zero].safeAreaInsets.top
-
-        return if scrollViewOffset < 0, abs(scrollViewOffset) >= scrollViewSafeAreaInsets.top {
-            position
-        } else {
-            position - (abs(scrollViewOffset + scrollViewSafeAreaInsets.top) * multiplier)
-        }
-    }
-
-    private var navigationBarHeight: CGFloat {
-        abs(frameForParentView[.navigationStack, default: .zero].safeAreaInsets.top - scrollViewSafeAreaInsets.top)
-    }
-
-    private var adjustedHeaderHeight: CGFloat {
-        headerSize.height + max(
-            0, navigationBarHeight
-        )
-    }
-
-    private var scaleEffect: CGFloat {
-        guard headerSize.height > 0 else { return 1 }
-
-        var scale: CGFloat {
-            if scrollViewOffset < 0, abs(scrollViewOffset) >= scrollViewSafeAreaInsets.top {
-                (adjustedHeaderHeight + abs(scrollViewOffset + scrollViewSafeAreaInsets.top)) / headerSize.height
-            } else {
-                adjustedHeaderHeight / headerSize.height
-            }
-        }
-
-        return max(1, scale)
+        self.header = header
     }
 
     func body(content: Content) -> some View {
         content
-            .trackingFrame($contentFrame)
+            .trackingSize($contentSize)
             .background(alignment: .top) {
-                background
-                    .trackingSize($headerSize)
-                    .scaleEffect(scaleEffect, anchor: .top)
+                header()
+                    .offset(y: scrollViewOffset > 0 ? -scrollViewOffset * multiplier : 0)
+                    .scaleEffect(scrollViewOffset < 0 ? (height - scrollViewOffset) / height : 1, anchor: .top)
+                    .frame(width: contentSize.width)
                     .mask(alignment: .top) {
                         Color.black
-                            .frame(height: maskHeight)
-                            .offset(y: -scrollViewSafeAreaInsets.top)
+                            .frame(height: max(0, height - scrollViewOffset))
                     }
-                    .offset(y: offset)
+                    .ignoresSafeArea()
             }
     }
 }

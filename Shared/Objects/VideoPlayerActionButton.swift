@@ -17,7 +17,7 @@ enum VideoPlayerActionButton: String, CaseIterable, Displayable, Equatable, Iden
     case gestureLock
     #endif
     case playbackSpeed
-    case playbackSettings
+//    case playbackQuality
     case playNextItem
     case playPreviousItem
     case subtitles
@@ -36,8 +36,8 @@ enum VideoPlayerActionButton: String, CaseIterable, Displayable, Equatable, Iden
         #endif
         case .playbackSpeed:
             L10n.playbackSpeed
-        case .playbackSettings:
-            L10n.playback
+//        case .playbackQuality:
+//            return L10n.playbackQuality
         case .playNextItem:
             L10n.playNextItem
         case .playPreviousItem:
@@ -56,9 +56,11 @@ enum VideoPlayerActionButton: String, CaseIterable, Displayable, Equatable, Iden
         switch self {
         case .aspectFill: "arrow.up.left.and.arrow.down.right"
         case .audio: "speaker.wave.2"
-        case .autoPlay: "play.fill"
+        // A stacked-play glyph reads as "keep playing the queue" (autoplay next) so it isn't mistaken for the
+        // regular Play button (Prowlogue).
+        case .autoPlay: "play.square.stack.fill"
         case .playbackSpeed: "speedometer"
-        case .playbackSettings: "tv"
+//        case .playbackQuality: "tv.circle"
         case .playNextItem: "forward.end.fill"
         case .playPreviousItem: "backward.end.fill"
         case .subtitles: "captions.bubble.fill"
@@ -77,21 +79,15 @@ enum VideoPlayerActionButton: String, CaseIterable, Displayable, Equatable, Iden
     }
     #else
     var systemImage: String {
-        let usesLiquidGlassSymbols = if #available(iOS 26.0, *) {
-            true
-        } else {
-            false
-        }
-
-        return switch self {
+        switch self {
         case .aspectFill: "arrow.up.left.and.arrow.down.right"
         case .audio: "speaker.wave.2.fill"
-        case .autoPlay: usesLiquidGlassSymbols ? "play.fill" : "play.circle.fill"
-        case .gestureLock: usesLiquidGlassSymbols ? "lock.fill" : "lock.circle.fill"
+        case .autoPlay: "play.circle.fill"
+        case .gestureLock: "lock.circle.fill"
         case .playbackSpeed: "speedometer"
-        case .playbackSettings: usesLiquidGlassSymbols ? "tv" : "tv.circle.fill"
-        case .playNextItem: usesLiquidGlassSymbols ? "forward.end.fill" : "forward.end.circle.fill"
-        case .playPreviousItem: usesLiquidGlassSymbols ? "backward.end.fill" : "backward.end.circle.fill"
+//        case .playbackQuality: "tv.circle.fill"
+        case .playNextItem: "forward.end.circle.fill"
+        case .playPreviousItem: "backward.end.circle.fill"
         case .subtitles: "captions.bubble.fill"
         }
     }
@@ -100,12 +96,7 @@ enum VideoPlayerActionButton: String, CaseIterable, Displayable, Equatable, Iden
         switch self {
         case .aspectFill: "arrow.down.right.and.arrow.up.left"
         case .audio: "speaker.wave.2"
-        case .autoPlay:
-            if #available(iOS 26.0, *) {
-                "stop"
-            } else {
-                "stop.circle"
-            }
+        case .autoPlay: "stop.circle"
         case .gestureLock: "lock.open.fill"
         case .subtitles: "captions.bubble"
         default:
@@ -125,6 +116,18 @@ enum VideoPlayerActionButton: String, CaseIterable, Displayable, Equatable, Iden
         .audio,
         .subtitles,
         .playbackSpeed,
-        .playbackSettings,
+    ]
+
+    /// Prowlogue (tvOS): the fixed left-to-right order for the player's control bar AND its overflow menu, used
+    /// by the settings picker (`GFBarButtonsRow`) and the player (`VideoPlayer+ActionButtons`). The bar shows
+    /// the enabled buttons in this order; the menu shows the rest in this order.
+    static let prowlogueControlOrder: [VideoPlayerActionButton] = [
+        .aspectFill,
+        .autoPlay,
+        .playPreviousItem,
+        .playNextItem,
+        .subtitles,
+        .audio,
+        .playbackSpeed,
     ]
 }

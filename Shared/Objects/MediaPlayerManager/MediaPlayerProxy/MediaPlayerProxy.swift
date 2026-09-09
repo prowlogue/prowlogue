@@ -16,7 +16,6 @@ import SwiftUI
 
 /// The proxy for top-down communication to an
 /// underlying media player
-@MainActor
 protocol MediaPlayerProxy: ObservableObject, MediaPlayerObserver {
 
     var isBuffering: PublishedBox<Bool> { get }
@@ -48,23 +47,21 @@ protocol VideoMediaPlayerProxy: MediaPlayerProxy, MediaPlayerAudioTrackConfigura
     var videoPlayerBody: Self.VideoPlayerBody { get }
 }
 
-@MainActor
 protocol MediaPlayerAudioTrackConfigurable {
     func setAudioStream(_ stream: MediaStream)
 }
 
-@MainActor
 protocol MediaPlayerSubtitleTrackConfigurable {
     func setSubtitleStream(_ stream: MediaStream)
 }
 
-@MainActor
 protocol MediaPlayerOffsetConfigurable {
     func setAudioOffset(_ seconds: Duration)
     func setSubtitleOffset(_ seconds: Duration)
 }
 
-@MainActor
 protocol MediaPlayerSubtitleConfigurable {
-    func setSubtitleConfiguration(_ configuration: SubtitleConfiguration)
+    func setSubtitleColor(_ color: Color)
+    func setSubtitleFontName(_ fontName: String)
+    func setSubtitleFontSize(_ fontSize: Int)
 }

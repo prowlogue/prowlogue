@@ -13,28 +13,51 @@ import SwiftUI
 
 // TODO: currently SVGs are only supported for logos, which are only used in a few places.
 //       make it so when displaying an SVG there is a unified `image` caller modifier
-// TODO: look at replacing view phase resolution with `FadeContentTransitionView`
-// TODO: Allow failure to reserve previous state, keeping placeholder if image fails
-struct ImageView<_Image: View, Placeholder: View, Failure: View>: View {
+// TODO: `LazyImage` uses a transaction for view swapping, which will fade out old views
+//       and fade in new views, causing a black "flash" between the placeholder and final image.
+//       Since we use blur hashes, we actually just want the final image to fade in on top while
+//       the blur hash view is at full opacity.
+//       - refactor for option
+//       - take a look at `RotateContentView`
+// TODO: make Image and Placeholder generic constraints rather than any View
+struct ImageView<Failure: View>: View {
 
     @State
     private var sources: [ImageSource]
 
-    private var image: (UIImage) -> _Image
+    private var image: (Image) -> any View
     private var pipeline: ImagePipeline
-    private var placeholder: (ImageSource) -> Placeholder
+    private var placeholder: ((ImageSource) -> any View)?
     private var failure: Failure
+    // Optional Nuke processors applied to the load request (e.g. a downsample `Resize` for large external
+    // art). Defaults to none, so every existing caller is unaffected: an empty processors array produces the
+    // SAME Nuke cache key as a plain URL request. Set via `.processors(_:)`.
+    private var processors: [any ImageProcessing] = []
+
+    @ViewBuilder
+    private func _placeholder(_ currentSource: ImageSource) -> some View {
+        if let placeholder {
+            placeholder(currentSource)
+                .eraseToAnyView()
+        } else {
+            DefaultPlaceholderView(blurHash: currentSource.blurHash)
+        }
+    }
 
     var body: some View {
         if let currentSource = sources.first {
-            LazyImage(url: currentSource.url, transaction: .init(animation: .linear)) { state in
+            LazyImage(
+                request: ImageRequest(url: currentSource.url, processors: processors),
+                transaction: .init(animation: .linear)
+            ) { state in
                 if state.isLoading {
-                    placeholder(currentSource)
-                } else if let container = state.imageContainer {
-                    if let data = container.data {
+                    _placeholder(currentSource)
+                } else if let _image = state.image {
+                    if let data = state.imageContainer?.data {
                         FastSVGView(data: data)
                     } else {
-                        image(container.image)
+                        image(_image.resizable())
+                            .eraseToAnyView()
                     }
                 } else if state.error != nil {
                     failure
@@ -51,7 +74,7 @@ struct ImageView<_Image: View, Placeholder: View, Failure: View>: View {
     }
 }
 
-extension ImageView where _Image == Image, Placeholder == DefaultPlaceholderView, Failure == EmptyView {
+extension ImageView where Failure == EmptyView {
 
     init(_ source: ImageSource) {
         self.init([source].compacted(using: \.url))
@@ -60,9 +83,9 @@ extension ImageView where _Image == Image, Placeholder == DefaultPlaceholderView
     init(_ sources: [ImageSource]) {
         self.init(
             sources: sources.compacted(using: \.url),
-            image: { Image(uiImage: $0).resizable() },
+            image: { $0 },
             pipeline: .shared,
-            placeholder: { DefaultPlaceholderView(blurHash: $0.blurHash) },
+            placeholder: nil,
             failure: EmptyView()
         )
     }
@@ -84,60 +107,45 @@ extension ImageView where _Image == Image, Placeholder == DefaultPlaceholderView
 
 extension ImageView {
 
-    func image<NewImage: View>(
-        @ViewBuilder _ content: @escaping (UIImage) -> NewImage
-    ) -> ImageView<NewImage, Placeholder, Failure> {
-        ImageView<NewImage, Placeholder, Failure>(
-            sources: sources,
-            image: content,
-            pipeline: pipeline,
-            placeholder: placeholder,
-            failure: failure
-        )
-    }
-
-    func image<NewImage: View>(
-        @ViewBuilder _ content: @escaping (Image) -> NewImage
-    ) -> ImageView<NewImage, Placeholder, Failure> {
-        ImageView<NewImage, Placeholder, Failure>(
-            sources: sources,
-            image: { content(Image(uiImage: $0).resizable()) },
-            pipeline: pipeline,
-            placeholder: placeholder,
-            failure: failure
-        )
+    func image(@ViewBuilder _ content: @escaping (Image) -> any View) -> Self {
+        copy(modifying: \.image, with: content)
     }
 
     func pipeline(_ pipeline: ImagePipeline) -> Self {
         copy(modifying: \.pipeline, with: pipeline)
     }
 
-    func placeholder<NewPlaceholder: View>(
-        @ViewBuilder _ content: @escaping (ImageSource) -> NewPlaceholder
-    ) -> ImageView<_Image, NewPlaceholder, Failure> {
-        ImageView<_Image, NewPlaceholder, Failure>(
-            sources: sources,
-            image: image,
-            pipeline: pipeline,
-            placeholder: content,
-            failure: failure
-        )
+    /// Apply Nuke processors to the load request — chiefly a downsample `ImageProcessors.Resize` for large
+    /// external art (TMDB/plugin posters) so it's decoded at display size instead of full resolution.
+    func processors(_ processors: [any ImageProcessing]) -> Self {
+        copy(modifying: \.processors, with: processors)
     }
 
-    func failure<NewFailure: View>(
-        @ViewBuilder _ content: @escaping () -> NewFailure
-    ) -> ImageView<_Image, Placeholder, NewFailure> {
-        ImageView<_Image, Placeholder, NewFailure>(
+    func placeholder(@ViewBuilder _ content: @escaping (ImageSource) -> any View) -> Self {
+        copy(modifying: \.placeholder, with: content)
+    }
+
+    func failure<NewFailure: View>(@ViewBuilder _ content: @escaping () -> NewFailure) -> ImageView<NewFailure> {
+        ImageView<NewFailure>(
             sources: sources,
             image: image,
             pipeline: pipeline,
             placeholder: placeholder,
-            failure: content()
+            failure: content(),
+            processors: processors
         )
     }
 }
 
 // MARK: Defaults
+
+struct DefaultFailureView: View {
+
+    var body: some View {
+        Color.secondarySystemFill
+            .opacity(0.75)
+    }
+}
 
 struct DefaultPlaceholderView: View {
 
@@ -145,11 +153,7 @@ struct DefaultPlaceholderView: View {
 
     var body: some View {
         if let blurHash {
-            Image(
-                blurHash: blurHash,
-                size: .init(width: 8, height: 8)
-            )?
-                .resizable()
+            BlurHashView(blurHash: blurHash, size: .Square(length: 8))
         }
     }
 }

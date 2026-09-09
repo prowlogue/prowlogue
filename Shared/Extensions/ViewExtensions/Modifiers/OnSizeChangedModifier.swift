@@ -8,12 +8,6 @@
 
 import SwiftUI
 
-private struct SizeAndSafeAreaInsets: Equatable {
-
-    let size: CGSize
-    let safeAreaInsets: EdgeInsets
-}
-
 struct OnSizeChangedModifier<Wrapped: View>: ViewModifier {
 
     @State
@@ -24,24 +18,6 @@ struct OnSizeChangedModifier<Wrapped: View>: ViewModifier {
 
     func body(content: Content) -> some View {
         wrapped(size)
-            .onSizeChanged { newSize, _ in
-                size = newSize
-            }
-    }
-}
-
-extension View {
-
-    func onSizeChanged(
-        perform action: @escaping (CGSize, EdgeInsets) -> Void
-    ) -> some View {
-        onGeometryChange(for: SizeAndSafeAreaInsets.self) { proxy in
-            .init(
-                size: proxy.size,
-                safeAreaInsets: proxy.safeAreaInsets
-            )
-        } action: { newValue in
-            action(newValue.size, newValue.safeAreaInsets)
-        }
+            .trackingSize($size)
     }
 }

@@ -12,7 +12,7 @@ import SwiftUI
 struct CountryPicker: View {
 
     @StateObject
-    private var viewModel: PagingLibraryViewModel<CountryLibrary>
+    private var viewModel: CountriesViewModel
 
     private let selection: Binding<String?>
     private let title: String
@@ -20,20 +20,20 @@ struct CountryPicker: View {
     init(_ title: String, twoLetterISORegion: Binding<String?>) {
         self.selection = twoLetterISORegion
         self.title = title
-        self._viewModel = .init(wrappedValue: .init(library: .init()))
+        self._viewModel = .init(wrappedValue: .init(initialValue: []))
     }
 
     private var currentCountry: CountryInfo? {
-        viewModel.elements.first(property: \.twoLetterISORegionName, equalTo: selection.wrappedValue)
+        viewModel.value.first(property: \.twoLetterISORegionName, equalTo: selection.wrappedValue)
     }
 
     @ViewBuilder
     private var picker: some View {
         Picker(
             title,
-            sources: viewModel.elements,
+            sources: viewModel.value,
             selection: selection.map(
-                getter: { iso in viewModel.elements.first(property: \.twoLetterISORegionName, equalTo: iso) },
+                getter: { iso in viewModel.value.first(property: \.twoLetterISORegionName, equalTo: iso) },
                 setter: { info in info?.twoLetterISORegionName }
             )
         )
@@ -54,7 +54,7 @@ struct CountryPicker: View {
             picker
             #endif
         }
-        .enabled(viewModel.state == .content)
+        .enabled(viewModel.state == .initial)
         .onFirstAppear {
             viewModel.refresh()
         }

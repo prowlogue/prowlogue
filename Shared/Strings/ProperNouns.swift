@@ -109,6 +109,7 @@ extension L10n {
     static let dvbTeletext = "DVB Teletext"
     static let dvdSubtitle = "DVD Subtitle"
     static let eia608 = "EIA-608"
+    static let jacosub = "Jacosub"
     static let mpeg4TimedText = "MPEG-4 Timed Text"
     static let mpl2 = "MPL2"
     static let pgsSubtitle = "PGS Subtitle"
@@ -127,7 +128,7 @@ extension L10n {
 
     // MARK: - Brands
 
-    static let swiftfin = "Swiftfin"
+    static let swiftfin = "Prowlogue"
     static let jellyfin = "Jellyfin"
 
     // MARK: - Platforms

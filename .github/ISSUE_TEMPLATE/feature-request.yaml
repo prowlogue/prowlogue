@@ -8,35 +8,27 @@ body:
       value: |
         ### Thank you for taking the time to suggest a feature!
 
+        Prowlogue is an Apple TV client for [Jellyfin](https://jellyfin.org), built on
+        [Swiftfin](https://github.com/jellyfin/Swiftfin). Requests here should be about the
+        Prowlogue app — server-side features belong with Jellyfin.
+
   - type: checkboxes
     id: before-posting
     attributes:
       label: "This feature request respects the following points:"
       description: Please help us by ensuring that you meet all the following conditions.
       options:
-        - label: This feature has **not** already been requested on [GitHub](https://github.com/jellyfin/Swiftfin/issues?q=is%3Aissue%20state%3Aopen%20type%3AFeature).
+        - label: This feature has **not** already been requested on [GitHub](https://github.com/prowlogue/prowlogue/issues?q=is%3Aissue%20state%3Aopen%20type%3AFeature).
           required: true
         - label: I agree to follow Jellyfin's [Code of Conduct](https://jellyfin.org/docs/general/community-standards.html#code-of-conduct).
           required: true
 
-  - type: dropdown
-    id: platform
-    attributes:
-      label: Platform
-      description: Select the platform(s) where this feature would apply
-      multiple: true
-      options:
-        - iOS
-        - tvOS
-    validations:
-      required: true
-    
   - type: textarea
     id: description
     attributes:
       label: Describe the feature you'd like to see
       description: Please provide a clear and detailed description of the feature you're requesting.
       placeholder: |
-        I am looking for Swiftfin to support Music Libraries and Playlists. Ideally, this would use a folder structure so I would be able to see Artist > Album > Song.
+        I am looking for Prowlogue to support Music Libraries and Playlists. Ideally, this would use a folder structure so I would be able to see Artist > Album > Song.
     validations:
       required: true

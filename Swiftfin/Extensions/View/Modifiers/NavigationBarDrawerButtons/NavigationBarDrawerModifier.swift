@@ -8,40 +8,21 @@
 
 import SwiftUI
 
-struct NavigationBarFilterDrawerModifier: ViewModifier {
+struct NavigationBarDrawerModifier<Drawer: View>: ViewModifier {
 
-    @ObservedObject
-    var viewModel: FilterViewModel
+    private let drawer: () -> Drawer
 
-    let types: [ItemFilterType]
-
-    @ViewBuilder
-    private var drawer: some View {
-        NavigationBarFilterDrawer(
-            viewModel: viewModel,
-            types: types
-        )
+    init(@ViewBuilder drawer: @escaping () -> Drawer) {
+        self.drawer = drawer
     }
 
     func body(content: Content) -> some View {
-        if types.isEmpty {
-            content
-        } else {
-            if #available(iOS 26, *) {
-                content
-                    .safeAreaBar(edge: .top, spacing: 0) {
-                        drawer
-                    }
-                    .preference(key: IsSafeAreaBarApplied.self, value: true)
-            } else {
-                NavigationBarDrawerView {
-                    drawer
-                        .ignoresSafeArea()
-                } content: {
-                    content
-                }
+        NavigationBarDrawerView {
+            drawer()
                 .ignoresSafeArea()
-            }
+        } content: {
+            content
         }
+        .ignoresSafeArea()
     }
 }

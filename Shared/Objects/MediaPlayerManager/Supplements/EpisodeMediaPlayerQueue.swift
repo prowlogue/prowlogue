@@ -49,22 +49,17 @@ class EpisodeMediaPlayerQueue: ViewModel, MediaPlayerQueue {
     lazy var previousItemPublisher: Published<MediaPlayerItemProvider?>.Publisher = $previousItem
 
     private var currentAdjacentEpisodesTask: AnyCancellable?
-    private let seasonsViewModel: PagingLibraryViewModel<SeasonViewModelLibrary>
+    private let seriesViewModel: SeriesItemViewModel
 
     init(episode: BaseItemDto) {
-        self.seasonsViewModel = PagingLibraryViewModel(
-            library: SeasonViewModelLibrary(
-                parent: BaseItemDto(id: episode.seriesID, name: episode.seriesName)
-            ),
-            pageSize: 100
-        )
+        self.seriesViewModel = SeriesItemViewModel(episode: episode)
         super.init()
 
-        seasonsViewModel.refresh()
+        seriesViewModel.send(.refresh)
     }
 
     var videoPlayerBody: some PlatformView {
-        EpisodeOverlay(viewModel: seasonsViewModel)
+        EpisodeOverlay(viewModel: seriesViewModel)
     }
 
     private func didReceive(newItem: MediaPlayerItem?) {
@@ -87,6 +82,7 @@ class EpisodeMediaPlayerQueue: ViewModel, MediaPlayerQueue {
 
         let parameters = try Paths.GetEpisodesParameters(
             userID: authenticatedUser.id,
+            fields: .MinimumFields,
             adjacentTo: item.id!,
             limit: 3
         )
@@ -122,22 +118,23 @@ class EpisodeMediaPlayerQueue: ViewModel, MediaPlayerQueue {
         var nextProvider: MediaPlayerItemProvider?
         var previousProvider: MediaPlayerItemProvider?
 
+        // The presented player view/proxy is fixed for the whole session, so adjacent auto-play episodes
+        // MUST build with the SAME engine the current item used — re-resolving per episode could hand a
+        // VLC-profile stream to the native proxy (or vice versa). Follow the session's resolved engine.
+        let sessionPlayerType = manager?.playbackItem?.videoPlayerType ?? Defaults[.VideoPlayer.videoPlayerType]
+
         if let nextItem {
-            nextProvider = MediaPlayerItemProvider(item: nextItem) { [weak self] item, modifyItem in
-                let bitrate = await self?.manager?.playbackBitrate ?? Defaults[.VideoPlayer.Playback.appMaximumBitrate]
-                return try await MediaPlayerItem.build(for: item, requestedBitrate: bitrate) { item in
-                    item.userData?.playbackPositionTicks = .zero
-                    modifyItem?(&item)
+            nextProvider = MediaPlayerItemProvider(item: nextItem) { item in
+                try await MediaPlayerItem.build(for: item, videoPlayerType: sessionPlayerType) {
+                    $0.userData?.playbackPositionTicks = .zero
                 }
             }
         }
 
         if let previousItem {
-            previousProvider = MediaPlayerItemProvider(item: previousItem) { [weak self] item, modifyItem in
-                let bitrate = await self?.manager?.playbackBitrate ?? Defaults[.VideoPlayer.Playback.appMaximumBitrate]
-                return try await MediaPlayerItem.build(for: item, requestedBitrate: bitrate) { item in
-                    item.userData?.playbackPositionTicks = .zero
-                    modifyItem?(&item)
+            previousProvider = MediaPlayerItemProvider(item: previousItem) { item in
+                try await MediaPlayerItem.build(for: item, videoPlayerType: sessionPlayerType) {
+                    $0.userData?.playbackPositionTicks = .zero
                 }
             }
         }
@@ -163,22 +160,27 @@ extension EpisodeMediaPlayerQueue {
         private var manager: MediaPlayerManager
 
         @ObservedObject
-        var viewModel: PagingLibraryViewModel<SeasonViewModelLibrary>
+        var viewModel: SeriesItemViewModel
 
         @State
-        private var selection: PagingLibraryViewModel<EpisodeLibrary>.ID?
+        private var selection: SeasonItemViewModel.ID?
 
-        private var selectionViewModel: PagingLibraryViewModel<EpisodeLibrary>? {
+        private var selectionViewModel: SeasonItemViewModel? {
             guard let selection else { return nil }
-            return viewModel.elements[id: selection]
+            return viewModel.seasons[id: selection]
         }
 
         private func select(episode: BaseItemDto) {
-            let provider = MediaPlayerItemProvider(item: episode) { [manager] item, modifyItem in
-                try await MediaPlayerItem.build(
+            // Keep the manually-selected episode on the same engine as the active session (the proxy
+            // can't be swapped mid-session). See the adjacent-episode note above.
+            let sessionPlayerType = manager.playbackItem?.videoPlayerType ?? Defaults[.VideoPlayer.videoPlayerType]
+            let provider = MediaPlayerItemProvider(item: episode) { item in
+                let mediaSource = item.mediaSources?.first
+
+                return try await MediaPlayerItem.build(
                     for: item,
-                    requestedBitrate: manager.playbackBitrate,
-                    modifyItem: modifyItem
+                    mediaSource: mediaSource!,
+                    videoPlayerType: sessionPlayerType
                 )
             }
 
@@ -186,20 +188,20 @@ extension EpisodeMediaPlayerQueue {
         }
 
         private func selectInitialSeason() {
-            if let seasonID = manager.item.seasonID, let season = viewModel.elements[id: seasonID] {
+            if let seasonID = manager.item.seasonID, let season = viewModel.seasons[id: seasonID] {
                 if season.elements.isEmpty {
-                    season.refresh()
+                    season.send(.refresh)
                 }
                 selection = season.id
             } else {
-                selection = viewModel.elements.first?.id
+                selection = viewModel.seasons.first?.id
             }
         }
 
-        private func setSelectionIfNeeded(seasons: IdentifiedArrayOf<PagingLibraryViewModel<EpisodeLibrary>>) {
+        private func setSelectionIfNeeded(seasons: IdentifiedArrayOf<SeasonItemViewModel>) {
             guard selection == nil, !seasons.isEmpty else { return }
             selection = seasons.first?.id
-            seasons.first?.refresh()
+            seasons.first?.send(.refresh)
         }
 
         var iOSView: some View {
@@ -216,11 +218,11 @@ extension EpisodeMediaPlayerQueue {
                     action: select
                 )
             }
+            .environmentObject(viewModel)
             .onAppear { selectInitialSeason() }
-            .onReceive(viewModel.$elements) { newSeasons in
+            .onReceive(viewModel.$seasons) { newSeasons in
                 setSelectionIfNeeded(seasons: newSeasons)
             }
-            .environmentObject(viewModel)
         }
 
         var tvOSView: some View {
@@ -228,33 +230,33 @@ extension EpisodeMediaPlayerQueue {
                 selection: $selection,
                 action: select
             )
+            .environmentObject(viewModel)
             .onFirstAppear {
                 selectInitialSeason()
             }
-            .onReceive(viewModel.$elements) { newSeasons in
+            .onReceive(viewModel.$seasons) { newSeasons in
                 setSelectionIfNeeded(seasons: newSeasons)
             }
-            .environmentObject(viewModel)
         }
     }
 
     private struct CompactSeasonStackObserver: View {
 
         @EnvironmentObject
-        private var seasonsViewModel: PagingLibraryViewModel<SeasonViewModelLibrary>
+        private var seriesViewModel: SeriesItemViewModel
 
-        let selection: Binding<PagingLibraryViewModel<EpisodeLibrary>.ID?>
+        let selection: Binding<SeasonItemViewModel.ID?>
         let action: (BaseItemDto) -> Void
 
-        private var selectionViewModel: PagingLibraryViewModel<EpisodeLibrary>? {
+        private var selectionViewModel: SeasonItemViewModel? {
             guard let id = selection.wrappedValue else { return nil }
-            return seasonsViewModel.elements[id: id]
+            return seriesViewModel.seasons[id: id]
         }
 
         private struct _Body: View {
 
             @ObservedObject
-            var selectionViewModel: PagingLibraryViewModel<EpisodeLibrary>
+            var selectionViewModel: SeasonItemViewModel
 
             let action: (BaseItemDto) -> Void
 
@@ -295,14 +297,14 @@ extension EpisodeMediaPlayerQueue {
     private struct RegularSeasonStackObserver: View {
 
         @EnvironmentObject
-        private var seasonsViewModel: PagingLibraryViewModel<SeasonViewModelLibrary>
+        private var seriesViewModel: SeriesItemViewModel
 
-        let selection: Binding<PagingLibraryViewModel<EpisodeLibrary>.ID?>
+        let selection: Binding<SeasonItemViewModel.ID?>
         let action: (BaseItemDto) -> Void
 
-        private var selectionViewModel: PagingLibraryViewModel<EpisodeLibrary>? {
+        private var selectionViewModel: SeasonItemViewModel? {
             guard let id = selection.wrappedValue else { return nil }
-            return seasonsViewModel.elements[id: id]
+            return seriesViewModel.seasons[id: id]
         }
 
         private struct _Body: View {
@@ -313,7 +315,7 @@ extension EpisodeMediaPlayerQueue {
             #endif
 
             @ObservedObject
-            var selectionViewModel: PagingLibraryViewModel<EpisodeLibrary>
+            var selectionViewModel: SeasonItemViewModel
 
             let action: (BaseItemDto) -> Void
 
@@ -322,7 +324,7 @@ extension EpisodeMediaPlayerQueue {
                 #if os(tvOS)
                 CollectionHStack(
                     uniqueElements: selectionViewModel.elements,
-                    id: \.id,
+                    id: \.unwrappedIDHashOrZero,
                     layout: .grid(columns: 5, rows: 1, columnTrailingInset: 0)
                 ) { episode in
                     EpisodeButton(episode: episode) {
@@ -334,7 +336,7 @@ extension EpisodeMediaPlayerQueue {
                 #else
                 CollectionHStack(
                     uniqueElements: selectionViewModel.elements,
-                    id: \.id,
+                    id: \.unwrappedIDHashOrZero,
                     layout: .minimumWidth(columnWidth: 170, rows: 1)
                 ) { item in
                     EpisodeButton(episode: item) {
@@ -378,7 +380,7 @@ extension EpisodeMediaPlayerQueue {
         private var isRetryButtonFocused: Bool
 
         @ObservedObject
-        var viewModel: PagingLibraryViewModel<EpisodeLibrary>
+        var viewModel: SeasonItemViewModel
 
         // TODO: Supplements are dismissed on retry, probably due to focus change
         @ViewBuilder
@@ -391,15 +393,21 @@ extension EpisodeMediaPlayerQueue {
                     .frame(height: UIDevice.isTV ? 80 : 40)
             } content: {
                 Button {
-                    viewModel.refresh()
+                    viewModel.send(.refresh)
                 } label: {
-                    Label(L10n.retry, systemImage: "arrow.clockwise")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .padding()
-                        .edgePadding(.horizontal)
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 7)
+                            .foregroundStyle(.white)
+
+                        Label(L10n.retry, systemImage: "arrow.clockwise")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.black)
+                            .padding()
+                            .edgePadding(.horizontal)
+                    }
                 }
-                .buttonStyle(.supplementAction)
+                .buttonStyle(.card)
                 .focused($isRetryButtonFocused)
                 .frame(height: UIDevice.isTV ? 80 : 50)
             }
@@ -443,7 +451,7 @@ extension EpisodeMediaPlayerQueue {
                 Rectangle()
                     .fill(.complexSecondary)
 
-                ImageView(episode.imageSource(.primary, environment: ImageSourceOptions(maxWidth: 200)))
+                ImageView(episode.imageSource(.primary, maxWidth: 200))
                     .failure {
                         SystemImageContentView(systemName: episode.systemImage)
                     }
@@ -459,7 +467,7 @@ extension EpisodeMediaPlayerQueue {
                 }
             }
             .posterStyle(.landscape)
-            .subtleShadow()
+            .posterShadow()
             .hoverEffect(.highlight)
         }
     }
@@ -527,21 +535,49 @@ extension EpisodeMediaPlayerQueue {
         let episode: BaseItemDto
         let action: () -> Void
 
+        @ViewBuilder
+        private var caption: some View {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(episode.displayTitle)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1, reservesSpace: true)
+
+                EpisodeDescription(episode: episode)
+                    .font(UIDevice.isTV ? .caption : .subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1, reservesSpace: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+
         var body: some View {
-            PosterButton(
-                item: episode._withLandscapeImages { environment in
-                    [
-                        episode.imageSource(
-                            .primary,
-                            environment: environment
-                        )
-                    ]
-                },
-                displayType: .landscape
-            ) { _ in
-                action()
+            #if os(tvOS)
+            // Prowlogue: native `.buttonStyle(.card)` poster (memoized image source, off-main BlurHash backdrop,
+            // NO custom glass rim / `.posterShadow()`) — matches the home / item-detail / episode-selector cards.
+            // The accent ring marks the now-playing episode; the caption sits outside the button.
+            ProwloguePlayerPosterCard(
+                itemID: episode.id,
+                sourceKind: "playerEpisodePrimary600",
+                blurHash: episode.blurHashString(for: .primary),
+                fallbackSystemImage: episode.systemImage,
+                isCurrent: manager.item.id == episode.id,
+                action: action,
+                makeSource: { episode.imageSource(.primary, maxWidth: 600) }
+            ) {
+                caption
+                    .padding(.top, 8)
+            }
+            #else
+            SupplementPosterButton(
+                item: episode._withLandscapeImages { [episode.imageSource(.primary, maxWidth: $0, quality: $1)] },
+                action: action
+            ) {
+                caption
             }
             .isSelected(manager.item.id == episode.id)
+            #endif
         }
     }
 }

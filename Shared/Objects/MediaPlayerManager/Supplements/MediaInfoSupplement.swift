@@ -10,7 +10,6 @@ import JellyfinAPI
 import SwiftUI
 
 // TODO: scroll if description too long
-// TODO: move currentProgram tracking to a MediaPlayerObserver
 
 struct MediaInfoSupplement: MediaPlayerSupplement {
 
@@ -33,17 +32,15 @@ extension MediaInfoSupplement {
         @Environment(\.safeAreaInsets)
         private var safeAreaInsets: EdgeInsets
 
+        @FocusState
+        private var isResetButtonFocused: Bool
+
         @EnvironmentObject
         private var containerState: VideoPlayerContainerState
         @EnvironmentObject
         private var manager: MediaPlayerManager
 
-        @State
-        private var item: BaseItemDto
-
-        init(item: BaseItemDto) {
-            self._item = State(initialValue: item)
-        }
+        let item: BaseItemDto
 
         @ViewBuilder
         private var accessoryView: some View {
@@ -78,12 +75,21 @@ extension MediaInfoSupplement {
                 manager.setPlaybackRequestStatus(status: .playing)
                 containerState.select(supplement: nil)
             } label: {
-                Label(L10n.fromBeginning, systemImage: "play.fill")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 7)
+                        .foregroundStyle(.white)
+
+                    Label(L10n.fromBeginning, systemImage: "play.fill")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.black)
+                }
             }
-            .buttonStyle(.supplementAction)
-            .frame(height: UIDevice.isTV ? 80 : 40)
+            .buttonStyle(.card)
+            #if os(tvOS)
+                .focused($isResetButtonFocused)
+            #endif
+                .frame(height: UIDevice.isTV ? 80 : 40)
         }
 
         // TODO: may need to be a layout for correct overview frame
@@ -99,9 +105,6 @@ extension MediaInfoSupplement {
             }
             .padding(.leading, safeAreaInsets.leading)
             .padding(.trailing, safeAreaInsets.trailing)
-            .task(id: item.currentProgram?.endDate) {
-                await updateCurrentProgram()
-            }
         }
 
         @ViewBuilder
@@ -112,15 +115,7 @@ extension MediaInfoSupplement {
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
 
-                if let currentProgram = item.currentProgram {
-                    Text(currentProgram.displayTitle)
-                        .fontWeight(.semibold)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                        .foregroundStyle(.secondary)
-                }
-
-                if let overview = item.overview ?? item.currentProgram?.overview {
+                if let overview = item.overview {
                     Text(overview)
                         .font(.subheadline)
                         .fontWeight(.regular)
@@ -143,7 +138,9 @@ extension MediaInfoSupplement {
 
         @ViewBuilder
         private var regularContent: some View {
-            HStack(alignment: .bottom, spacing: EdgeInsets.edgePadding) {
+            // Top-aligned: the poster + text read from the top of the panel. (Was `.bottom`, which
+            // bottom-aligned the shorter text column against the poster so the text appeared to sit low.)
+            HStack(alignment: .top, spacing: EdgeInsets.edgePadding) {
                 // TODO: determine what to do with non-portrait (channel, home video) images
                 //       - use aspect ratio?
                 PosterImage(
@@ -156,21 +153,11 @@ extension MediaInfoSupplement {
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text(item.displayTitle)
-                        .font(.callout)
-                        .fontWeight(.semibold)
+                        .font(.callout.weight(.semibold))
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
 
-                    if let currentProgram = item.currentProgram {
-                        Text(currentProgram.displayTitle)
-                            .font(.callout)
-                            .fontWeight(.semibold)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if let overview = item.overview ?? item.currentProgram?.overview {
+                    if let overview = item.overview {
                         Text(overview)
                             .font(.subheadline)
                             .fontWeight(.regular)
@@ -182,19 +169,6 @@ extension MediaInfoSupplement {
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-
-                if !item.isLiveStream {
-                    AlternateLayoutView {
-                        Label(L10n.fromBeginning, systemImage: "play.fill")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .padding()
-                            .edgePadding(.horizontal)
-                            .frame(height: UIDevice.isTV ? 80 : 50)
-                    } content: {
-                        fromBeginningButton
-                    }
-                }
             }
         }
 
@@ -210,21 +184,8 @@ extension MediaInfoSupplement {
                 .edgePadding()
                 .frame(maxWidth: .infinity, alignment: .topLeading)
                 .focusSection()
-                .task(id: item.currentProgram?.endDate) {
-                    await updateCurrentProgram()
-                }
-        }
-
-        private func updateCurrentProgram() async {
-            guard let userSession = manager.userSession,
-                  let endDate = item.currentProgram?.endDate
-            else { return }
-
-            try? await Task.sleep(for: .seconds(max(endDate.timeIntervalSinceNow + 1, 1)))
-
-            guard let newItem = try? await item.getFullItem(userSession: userSession) else { return }
-
-            item = newItem
+            // No default focus: the Info tab is now read-only (the "From Beginning" button was removed), so
+            // there's nothing to focus — the tab is reached via the supplement tab bar and dismissed with Menu.
         }
     }
 }

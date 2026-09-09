@@ -1,5 +1,8 @@
 blank_issues_enabled: true
 contact_links:
+  - name: Prowlogue Discord
+    url: https://discord.gg/e8A3D9P7fk
+    about: Questions, setup help, TestFlight access, and troubleshooting with the community
   - name: Jellyfin documentation
-    url:  https://jellyfin.org/docs/general/getting-help.html
-    about: Our documentation contains lots of help for common issues
+    url: https://jellyfin.org/docs/general/getting-help.html
+    about: Help for Jellyfin *server* issues — libraries, metadata, transcoding, and plugins

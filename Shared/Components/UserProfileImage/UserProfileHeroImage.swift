@@ -7,7 +7,7 @@
 //
 
 import Defaults
-import FactoryKit
+import Factory
 import JellyfinAPI
 import Nuke
 import SwiftUI

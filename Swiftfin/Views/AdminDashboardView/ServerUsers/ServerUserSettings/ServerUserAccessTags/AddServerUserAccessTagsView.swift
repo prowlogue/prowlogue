@@ -22,29 +22,24 @@ struct AddServerUserAccessTagsView: View {
     @State
     private var tempPolicy: UserPolicy
     @State
-    private var input: ItemComponentEditorInput = .init(
-        id: nil,
-        name: "",
-        personKind: .unknown,
-        personRole: ""
-    )
+    private var tempTag: String = ""
 
     @StateObject
-    private var tagViewModel: ItemComponentEditorViewModel<TagComponentEditor>
+    private var tagViewModel: TagEditorViewModel
 
     private var alreadyOnItem: Bool {
         let blocked = tempPolicy.blockedTags ?? []
         let allowed = tempPolicy.allowedTags ?? []
-        return blocked.contains { $0.caseInsensitiveCompare(input.name) == .orderedSame }
-            || allowed.contains { $0.caseInsensitiveCompare(input.name) == .orderedSame }
+        return blocked.contains { $0.caseInsensitiveCompare(tempTag) == .orderedSame }
+            || allowed.contains { $0.caseInsensitiveCompare(tempTag) == .orderedSame }
     }
 
     private var existsOnServer: Bool {
-        input.name.isNotEmpty && tagViewModel.editor.matchExists(named: input.name, in: tagViewModel.matches)
+        tempTag.isNotEmpty && tagViewModel.matchExists(named: tempTag)
     }
 
     private var isValid: Bool {
-        input.name.isNotEmpty && !alreadyOnItem
+        tempTag.isNotEmpty && !alreadyOnItem
     }
 
     // MARK: - Initializer
@@ -55,10 +50,7 @@ struct AddServerUserAccessTagsView: View {
             authenticationProviderID: "",
             passwordResetProviderID: ""
         )
-        self._tagViewModel = StateObject(wrappedValue: ItemComponentEditorViewModel(
-            editor: TagComponentEditor(),
-            item: .init()
-        ))
+        self._tagViewModel = StateObject(wrappedValue: TagEditorViewModel(item: .init()))
     }
 
     // MARK: - Body
@@ -83,14 +75,14 @@ struct AddServerUserAccessTagsView: View {
             }
 
             ItemElementSearchView(
-                input: $input,
-                editor: tagViewModel.editor,
+                name: $tempTag,
                 population: tagViewModel.matches,
                 isSearching: tagViewModel.background.states.contains(.searching),
                 alreadyOnItem: alreadyOnItem,
                 existsOnServer: existsOnServer
             )
         }
+        .backport
         .toolbarTitleDisplayMode(.inline)
         .navigationTitle(L10n.addAccessTag.localizedCapitalized)
         .navigationBarCloseButton {
@@ -105,41 +97,28 @@ struct AddServerUserAccessTagsView: View {
             }
 
             if viewModel.background.states.contains(.updating) {
-                Button(L10n.cancel, role: .cancel) {
+                Button(L10n.cancel) {
                     viewModel.cancel()
                 }
-                .foregroundStyle(.primary, .secondary)
-                .backport
-                .buttonStyle(.glass)
-                .controlSize(.small)
+                .buttonStyle(.toolbarPill(.red))
             } else {
-                let saveAction: () -> Void = {
+                Button(L10n.save) {
                     if access {
                         tempPolicy.allowedTags = tempPolicy.allowedTags
-                            .appendedOrInit(input.name)
+                            .appendedOrInit(tempTag)
                     } else {
                         tempPolicy.blockedTags = tempPolicy.blockedTags
-                            .appendedOrInit(input.name)
+                            .appendedOrInit(tempTag)
                     }
 
                     viewModel.updatePolicy(tempPolicy)
                 }
-
-                Group {
-                    if #available(iOS 26, *) {
-                        Button(L10n.save, role: .confirm, action: saveAction)
-                    } else {
-                        Button(L10n.save, action: saveAction)
-                            .backport
-                            .buttonStyle(.glassProminent)
-                            .controlSize(.small)
-                    }
-                }
+                .buttonStyle(.toolbarPill)
                 .disabled(!isValid)
             }
         }
-        .onChange(of: input.name) {
-            tagViewModel.search(input.name)
+        .onChange(of: tempTag) { newTag in
+            tagViewModel.search(newTag)
         }
         .onReceive(viewModel.events) { event in
             switch event {

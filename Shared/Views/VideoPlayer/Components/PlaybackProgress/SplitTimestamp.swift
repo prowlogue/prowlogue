@@ -33,7 +33,7 @@ extension VideoPlayer.PlaybackControls {
         private var trailingTimestampSize: CGSize = .zero
 
         private var scrubbedProgress: Double {
-            guard let runtime = manager.item.runtime, runtime > .zero else { return 0 }
+            guard let runtime = manager.playbackRuntime, runtime > .zero else { return 0 }
             return scrubbedSeconds / runtime
         }
 
@@ -78,7 +78,7 @@ extension VideoPlayer.PlaybackControls {
         private var trailingTimestamp: some View {
             HStack(spacing: 2) {
                 Group {
-                    if let runtime = manager.item.runtime {
+                    if let runtime = manager.playbackRuntime {
                         Text(runtime - activeSeconds, format: .runtime)
                     } else {
                         Text(verbatim: .emptyRuntime)
@@ -90,7 +90,7 @@ extension VideoPlayer.PlaybackControls {
                 .foregroundStyle(.secondary)
                 .isVisible(isScrubbing)
 
-                if let runtime = manager.item.runtime {
+                if let runtime = manager.playbackRuntime {
                     switch trailingTimestampType {
                     case .timeLeft:
                         Text(.zero - (runtime - scrubbedSeconds), format: .runtime)
@@ -140,8 +140,14 @@ extension VideoPlayer.PlaybackControls {
 
         var tvOSView: some View {
             ZStack {
-                if let runtime = manager.item.runtime {
-                    Text(.zero - (runtime - scrubbedSeconds), format: .runtime)
+                if let runtime = manager.playbackRuntime {
+                    // Honor the Trailing Timestamp setting: Time Left (negative remaining) vs Total Time.
+                    switch trailingTimestampType {
+                    case .timeLeft:
+                        Text(.zero - (runtime - scrubbedSeconds), format: .runtime)
+                    case .totalTime:
+                        Text(runtime, format: .runtime)
+                    }
                 } else {
                     Text(verbatim: .emptyRuntime)
                 }

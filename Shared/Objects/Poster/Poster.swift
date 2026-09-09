@@ -9,61 +9,50 @@
 import Foundation
 import SwiftUI
 
-typealias ImageSourceBuilder = ArrayBuilder<ImageSource>
+// TODO: create environment for image sources
+//       - for when to have episode use series
+//       - pass in folder context
+//       - thumb
+//       - could remove cinematic, just use landscape
 
 /// A type that is displayed as a poster
-protocol Poster: Displayable, Hashable, Identifiable, SystemImageable {
+protocol Poster: Displayable, Hashable, LibraryIdentifiable, SystemImageable {
 
-    associatedtype Environment: WithDefaultValue = Empty
-    associatedtype ImageBody: View = Image
-    associatedtype LabelBody: View = EmptyView
-    associatedtype ContextMenuBody: View = EmptyView
-    associatedtype OverlayBody: View = EmptyView
+    associatedtype ImageBody: View
 
     var preferredPosterDisplayType: PosterDisplayType { get }
 
     /// Optional subtitle when used as a poster
     var subtitle: String? { get }
 
-    func resolveEnvironment(_ environment: EnvironmentValues) -> Environment
+    /// Show the title
+    var showTitle: Bool { get }
 
-    @ImageSourceBuilder
     func portraitImageSources(
-        environment: Environment
+        maxWidth: CGFloat?,
+        quality: Int?
     ) -> [ImageSource]
 
-    @ImageSourceBuilder
     func landscapeImageSources(
-        environment: Environment
+        maxWidth: CGFloat?,
+        quality: Int?
     ) -> [ImageSource]
 
-    @ImageSourceBuilder
+    func cinematicImageSources(
+        maxWidth: CGFloat?,
+        quality: Int?
+    ) -> [ImageSource]
+
     func squareImageSources(
-        environment: Environment
+        maxWidth: CGFloat?,
+        quality: Int?
     ) -> [ImageSource]
 
-    @ImageSourceBuilder
-    func imageSources(
-        for displayType: PosterDisplayType,
-        size: PosterDisplayType.Size,
-        environment: Environment
-    ) -> [ImageSource]
+    func thumbImageSources() -> [ImageSource]
 
     @MainActor
     @ViewBuilder
-    func transform(image: Image, displayType: PosterDisplayType) -> ImageBody
-
-    @MainActor
-    @ViewBuilder
-    var posterLabel: LabelBody { get }
-
-    @MainActor
-    @ViewBuilder
-    var posterContextMenu: ContextMenuBody { get }
-
-    @MainActor
-    @ViewBuilder
-    func posterOverlay(for displayType: PosterDisplayType) -> OverlayBody
+    func transform(image: Image) -> ImageBody
 }
 
 extension Poster where ImageBody == Image {
@@ -71,39 +60,6 @@ extension Poster where ImageBody == Image {
     @MainActor
     func transform(image: Image) -> Image {
         image
-    }
-
-    @MainActor
-    @ViewBuilder
-    func transform(image: Image, displayType: PosterDisplayType) -> ImageBody {
-        image
-    }
-}
-
-extension Poster where LabelBody == EmptyView {
-
-    @MainActor
-    @ViewBuilder
-    var posterLabel: LabelBody {
-        EmptyView()
-    }
-}
-
-extension Poster where ContextMenuBody == EmptyView {
-
-    @MainActor
-    @ViewBuilder
-    var posterContextMenu: ContextMenuBody {
-        EmptyView()
-    }
-}
-
-extension Poster where OverlayBody == EmptyView {
-
-    @MainActor
-    @ViewBuilder
-    func posterOverlay(for displayType: PosterDisplayType) -> OverlayBody {
-        EmptyView()
     }
 }
 
@@ -113,89 +69,44 @@ extension Poster {
         nil
     }
 
-    func resolveEnvironment(_: EnvironmentValues) -> Environment {
-        .default
+    var showTitle: Bool {
+        true
     }
 
     func portraitImageSources(
-        environment: Environment
+        maxWidth: CGFloat? = nil,
+        quality: Int? = nil
     ) -> [ImageSource] {
         []
     }
 
     func landscapeImageSources(
-        environment: Environment
+        maxWidth: CGFloat? = nil,
+        quality: Int? = nil
+    ) -> [ImageSource] {
+        []
+    }
+
+    func cinematicImageSources(
+        maxWidth: CGFloat?,
+        quality: Int? = nil
     ) -> [ImageSource] {
         []
     }
 
     func squareImageSources(
-        environment: Environment
+        maxWidth: CGFloat?,
+        quality: Int? = nil
     ) -> [ImageSource] {
         []
     }
 
-    func imageSources(
-        for displayType: PosterDisplayType,
-        size: PosterDisplayType.Size,
-        environment: Environment
-    ) -> [ImageSource] {
-        var environment = environment
-
-        if var imageSourceEnvironment = environment as? WithImageSourceOptions {
-            imageSourceEnvironment.maxWidth = size.width(for: displayType)
-            imageSourceEnvironment.quality = size.quality
-            environment = imageSourceEnvironment as! Environment
-        }
-
-        return switch displayType {
-        case .landscape:
-            landscapeImageSources(
-                environment: environment
-            )
-        case .portrait:
-            portraitImageSources(
-                environment: environment
-            )
-        case .square:
-            squareImageSources(
-                environment: environment
-            )
-        }
+    // TODO: change to observe preferred poster display type
+    func thumbImageSources() -> [ImageSource] {
+        []
     }
 
-    func imageSources(
-        for displayType: PosterDisplayType,
-        size: PosterDisplayType.Size
-    ) -> [ImageSource] {
-        imageSources(
-            for: displayType,
-            size: size,
-            environment: .default
-        )
-    }
-
-    func _withLandscapeImages(_ imageSources: @escaping (AnyPoster.Environment) -> [ImageSource]) -> AnyPoster {
+    func _withLandscapeImages(_ imageSources: @escaping (CGFloat?, Int?) -> [ImageSource]) -> AnyPoster {
         .init(self, _withLandscapeImages: imageSources)
-    }
-}
-
-extension View {
-
-    @MainActor
-    @ViewBuilder
-    func posterContextMenu<Item: Poster>(
-        for item: Item,
-        @ViewBuilder preview: @escaping () -> some View
-    ) -> some View {
-        if Item.ContextMenuBody.self == EmptyView.self {
-            self
-        } else {
-            contextMenu {
-                item.posterContextMenu
-            } preview: {
-                preview()
-            }
-        }
     }
 }

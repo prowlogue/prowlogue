@@ -64,11 +64,12 @@ struct Stepper<
         } label: {
             label()
         }
+        // Native `.sheet` now that the app-wide modal-button bug is fixed (was the custom `._alert`, which
+        // hosted this rich +/- editor that native `.alert` can't). The `title` it showed is added inline.
         .sheet(isPresented: $isPresented) {
-            VStack(spacing: 8) {
-                Text(title.localizedCapitalized)
-                    .font(.title3)
-                    .edgePadding(.bottom)
+            VStack {
+                Text(title)
+                    .font(.title3.weight(.semibold))
 
                 HStack(spacing: 24) {
                     Button(L10n.decrement, systemImage: "minus") {
@@ -114,12 +115,10 @@ struct Stepper<
                         Text(L10n.close)
                     }
                 }
-                .edgePadding(.top)
             }
             .onAppear {
                 value = min(max(value, range.lowerBound), range.upperBound)
             }
-            .edgePadding()
         }
     }
 }

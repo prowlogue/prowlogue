@@ -8,6 +8,7 @@
 
 import CollectionHStack
 import Defaults
+import Engine
 import JellyfinAPI
 import SwiftUI
 
@@ -53,6 +54,7 @@ struct ItemImagesView: View {
                 }
             }
         }
+        .backport
         .toolbarTitleDisplayMode(.inline)
         .navigationTitle(L10n.images)
         .navigationBarCloseButton {
@@ -176,12 +178,7 @@ struct ItemImagesView: View {
                 selectedType.displayTitle,
                 systemImage: "chevron.down"
             )
-            .labelStyle(
-                CapsuleLabelStyle(
-                    isIconTrailing: true
-                )
-            )
-            .font(.headline)
+            .labelStyle(.episodeSelector)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -227,7 +224,7 @@ struct ItemImagesView: View {
                     .pipeline(.Swiftfin.other)
                 }
                 .posterStyle(posterType)
-                .subtleShadow()
+                .posterShadow()
             }
             .buttonStyle(.plain)
         }
@@ -249,7 +246,7 @@ struct ItemImagesView: View {
                 }
             }
             .posterStyle(posterType)
-            .subtleShadow()
+            .posterShadow()
         }
         .buttonStyle(.plain)
     }

@@ -151,6 +151,12 @@ struct EditServerConnectionView: View {
         router.dismiss()
     }
 
+    private func setActiveConnection(_ connection: ServerConnection) {
+        Task {
+            _ = await viewModel.setActiveConnectionIfValid(connection)
+        }
+    }
+
     private func testDraft() {
         guard let draftConnection = try? draft.connection() else { return }
 
@@ -193,11 +199,11 @@ struct EditServerConnectionView: View {
 
             Section {
                 TextField(L10n.url, text: $draft.urlString)
-                    #if !os(tvOS)
-                        .textInputAutocapitalization(.never)
-                        .keyboardType(.URL)
-                        .autocorrectionDisabled()
-                    #endif
+                #if !os(tvOS)
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.URL)
+                    .autocorrectionDisabled()
+                #endif
             } header: {
                 Text(L10n.url)
             } footer: {
@@ -210,7 +216,7 @@ struct EditServerConnectionView: View {
             #if os(iOS)
             Section {
                 Picker(L10n.network, selection: $draft.interface) {
-                    ForEach(ServerConnection.Interface.allCases, id: \.self) { interface in
+                    ForEach(ServerConnectionInterface.allCases, id: \.self) { interface in
                         Text(interface.displayTitle)
                             .tag(interface)
                     }
@@ -238,9 +244,7 @@ struct EditServerConnectionView: View {
                         .foregroundStyle(.green)
                 } else if isExistingConnection {
                     Button(L10n.use) {
-                        Task {
-                            await viewModel.setActiveConnectionIfValid(connection)
-                        }
+                        setActiveConnection(connection)
                     }
                     .disabled(isTesting || hasChanges)
                 }
@@ -282,25 +286,13 @@ struct EditServerConnectionView: View {
             router.dismiss()
         }
         .topBarTrailing {
-            let saveAction: () -> Void = {
+            Button(L10n.save) {
                 Task { try? await save() }
             }
-
-            Group {
-                #if os(iOS)
-                if #available(iOS 26, *) {
-                    Button(L10n.save, role: .confirm, action: saveAction)
-                } else {
-                    Button(L10n.save, action: saveAction)
-                        .backport
-                        .buttonStyle(.glassProminent)
-                        .controlSize(.small)
-                }
-                #else
-                Button(L10n.save, action: saveAction)
-                #endif
-            }
             .disabled(isSaveDisabled)
+            #if os(iOS)
+                .buttonStyle(.toolbarPill)
+            #endif
         }
         .animation(.linear(duration: 0.1), value: draft.interface)
         .animation(.linear(duration: 0.1), value: draft.useWifiName)
@@ -308,12 +300,14 @@ struct EditServerConnectionView: View {
             isNameFocused = true
         }
         #if os(iOS)
-        .onChange(of: draft.interface) {
-            guard draft.interface == .wifi, draft.wifiSSIDs.first?.nilIfBlank == nil else { return }
+        .backport
+        .onChange(of: draft.interface) { _, newValue in
+            guard newValue == .wifi, draft.wifiSSIDs.first?.nilIfBlank == nil else { return }
             populateCurrentWifiSSID(keepSpecificOnFailure: false)
         }
-        .onChange(of: draft.useWifiName) {
-            guard draft.useWifiName, draft.interface == .wifi, draft.wifiSSIDs.first?.nilIfBlank == nil else { return }
+        .backport
+        .onChange(of: draft.useWifiName) { _, newValue in
+            guard newValue, draft.interface == .wifi, draft.wifiSSIDs.first?.nilIfBlank == nil else { return }
             populateCurrentWifiSSID(keepSpecificOnFailure: true)
         }
         .onAppear {
@@ -330,7 +324,7 @@ private struct ServerConnectionDraft: Equatable {
     let id: String
     var name: String
     var urlString: String
-    var interface: ServerConnection.Interface
+    var interface: ServerConnectionInterface
     var wifiSSIDs: [String]
     var priority: Int
     var useWifiName: Bool

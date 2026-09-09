@@ -76,9 +76,10 @@ struct NavigationRoute: Identifiable, Hashable {
 
     @ViewBuilder
     var destination: some View {
-        if case let .push(.zoom(sourceID, namespace)) = transitionStyle {
+        if case let .push(style) = transitionStyle {
             content
-                .navigationTransition(.zoom(sourceID: sourceID, in: namespace))
+                .backport
+                .navigationTransition(style)
         } else {
             content
         }

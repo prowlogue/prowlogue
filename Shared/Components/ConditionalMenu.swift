@@ -23,14 +23,11 @@ struct ConditionalMenu<Label: View, MenuContent: View>: View {
                 content: menuContent,
                 label: label
             )
-            .foregroundStyle(.primary, .secondary)
-            .menuStyle(.button)
         } else {
             Button(
                 action: action,
                 label: label
             )
-            .foregroundStyle(.primary, .secondary)
         }
     }
 }

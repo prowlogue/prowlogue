@@ -1,0 +1,71 @@
+//
+// Swiftfin is subject to the terms of the Mozilla Public
+// License, v2.0. If a copy of the MPL was not distributed with this
+// file, you can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// Copyright (c) 2026 Jellyfin & Jellyfin Contributors
+//
+
+import CollectionVGrid
+import Foundation
+import JellyfinAPI
+import SwiftUI
+
+struct ChannelLibraryView: View {
+
+    @Router
+    private var router
+
+    @StateObject
+    private var viewModel = ChannelLibraryViewModel()
+
+    @ViewBuilder
+    private var contentView: some View {
+        CollectionVGrid(
+            uniqueElements: viewModel.elements,
+            layout: .columns(3, insets: .init(0), itemSpacing: 25, lineSpacing: 25)
+        ) { channel in
+            WideChannelGridItem(channel: channel) {
+                // Tune the channel live. The player build path resolves the channel's live media
+                // source and auto-opens the live stream, so route the channel item directly.
+                router.route(to: .videoPlayer(item: channel.channel))
+            }
+        }
+        .onReachedBottomEdge(offset: .offset(300)) {
+            viewModel.send(.getNextPage)
+        }
+    }
+
+    var body: some View {
+        ZStack {
+            switch viewModel.state {
+            case .content:
+                if viewModel.elements.isEmpty {
+                    ContentUnavailableView(L10n.noChannels.localizedCapitalized, systemImage: "antenna.radiowaves.left.and.right")
+                } else {
+                    contentView
+                }
+            case let .error(error):
+                ErrorView(error: error)
+            case .initial, .refreshing:
+                ProgressView()
+            }
+        }
+        .animation(.linear(duration: 0.1), value: viewModel.state)
+        .ignoresSafeArea()
+        .refreshable {
+            viewModel.send(.refresh)
+        }
+        .onFirstAppear {
+            if viewModel.state == .initial {
+                viewModel.send(.refresh)
+            }
+        }
+        .sinceLastDisappear { interval in
+            // refresh after 3 hours
+            if interval >= 10800 {
+                viewModel.send(.refresh)
+            }
+        }
+    }
+}

@@ -7,10 +7,13 @@
 //
 
 import Defaults
-import FactoryKit
+import Factory
 import JellyfinAPI
 import OrderedCollections
 import SwiftUI
+
+// TODO: Need to change handling of splashscreen
+//       - change root item, needs to be background of navigation stack
 
 struct SelectUserView: View {
 
@@ -33,9 +36,6 @@ struct SelectUserView: View {
     private var authenticationAction
     @Environment(\.horizontalSizeClass)
     private var horizontalSizeClass
-
-    @Injected(\.userSessionManager)
-    private var userSessionManager: UserSessionManager
 
     @Router
     private var router
@@ -127,10 +127,14 @@ struct SelectUserView: View {
     }
 
     private func select(user: UserState) {
-        Task { @MainActor in
+        selectedUsers.insert(user)
 
+        Task { @MainActor in
             do {
-                guard let authenticationAction else { return }
+                guard let authenticationAction else {
+                    selectedUsers.remove(user)
+                    return
+                }
 
                 let evaluatedPolicy = try await authenticationAction(
                     policy: user.accessPolicy,
@@ -139,24 +143,33 @@ struct SelectUserView: View {
                 let pin = (evaluatedPolicy as? PinEvaluatedUserAccessPolicy)?.pin ?? ""
 
                 await viewModel.signIn(user, pin: pin)
+
+                if user.accessPolicy == .requirePin {
+                    selectedUsers.remove(user)
+                }
+            } catch is CancellationError {
+                selectedUsers.remove(user)
             } catch {
+                selectedUsers.remove(user)
                 await viewModel.error(error)
             }
         }
     }
 
+    private func onSignedIn(_ user: UserState) {
+        Container.shared.userSessionManager().signIn(userID: user.id)
+        UIDevice.feedback(.success)
+    }
+
     @ViewBuilder
     private var splashScreenBackground: some View {
         if selectUserUseSplashscreen, splashScreenImageSources.isNotEmpty {
-            AlternateLayoutView {
-                Color.clear
-            } content: {
+            ZStack(alignment: .top) {
                 ImageView(splashScreenImageSources)
                     .pipeline(.Swiftfin.local)
                     .aspectRatio(contentMode: .fill)
                     .id(splashScreenImageSources)
-            }
-            .overlay {
+
                 Color.black
                     .opacity(0.9)
             }
@@ -244,7 +257,7 @@ struct SelectUserView: View {
                 .ignoresSafeArea(.all, edges: .horizontal)
             }
 
-            Toolbar(
+            BottomBar(
                 servers: viewModel.servers.keys,
                 allUsers: userItems,
                 isEditing: $isEditing,
@@ -293,60 +306,36 @@ struct SelectUserView: View {
                             areAllUsersSelected ? L10n.removeAll : L10n.selectAll,
                             action: toggleAllUsersSelected
                         )
-                        .foregroundStyle(.primary, .secondary)
-                        .if(true) { view in
-                            if #available(iOS 26.0, *) {
-                                view
-                            } else {
-                                view
-                                    .backport
-                                    .buttonStyle(.glass)
-                            }
-                        }
-                        .controlSize(.small)
+                        .buttonStyle(.toolbarPill)
                     }
                 }
 
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     if isEditing {
-                        Button(L10n.cancel, role: .cancel) {
+                        Button(L10n.cancel) {
                             isEditing = false
                         }
-                        .foregroundStyle(.primary, .secondary)
-                        .if(true) { view in
-                            if #available(iOS 26.0, *) {
-                                view
-                            } else {
-                                view
-                                    .backport
-                                    .buttonStyle(.glass)
-                            }
-                        }
-                        .controlSize(.small)
+                        .buttonStyle(.toolbarPill)
                     } else {
-                        Menu(
-                            L10n.advanced,
-                            systemImage: "gearshape.fill"
-                        ) {
-                            AdvancedMenuContent(
+                        Menu {
+                            AdvancedMenu(
                                 hasUsers: userItems.isNotEmpty,
                                 isEditing: $isEditing
                             )
+                        } label: {
+                            Label(L10n.advanced, systemImage: "gearshape.fill")
                         }
-                        .backport
-                        .buttonStyle(.glass)
-                        .controlSize(.small)
                     }
                 }
 
                 ToolbarItem(placement: .bottomBar) {
                     if isEditing {
-                        Button(L10n.delete, role: .destructive) {
+                        Button(L10n.delete) {
                             isPresentingConfirmDeleteUsers = true
                         }
-                        .backport
-                        .buttonStyle(.glassProminent)
+                        .buttonStyle(.toolbarPill(.red))
                         .disabled(selectedUsers.isEmpty)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                     }
                 }
             }
@@ -359,12 +348,13 @@ struct SelectUserView: View {
         #if os(iOS)
         .ignoresSafeArea(.keyboard, edges: .bottom)
         #endif
+        .backport
         .onChange(of: isEditing) {
             guard !isEditing, !isPresentingConfirmDeleteUsers else { return }
             selectedUsers.removeAll()
         }
-        .onChange(of: viewModel.servers.keys) {
-            let newValue = viewModel.servers.keys
+        .backport
+        .onChange(of: viewModel.servers.keys) { _, newValue in
             if case let SelectUserServerSelection.server(id: id) = serverSelection,
                !newValue.contains(where: { $0.id == id })
             {
@@ -385,14 +375,7 @@ struct SelectUserView: View {
         .onReceive(viewModel.events) { event in
             switch event {
             case let .signedIn(user):
-                Task { @MainActor in
-                    do {
-                        try await userSessionManager.signIn(userID: user.id)
-                        UIDevice.feedback(.success)
-                    } catch {
-                        await viewModel.error(error)
-                    }
-                }
+                onSignedIn(user)
             }
         }
         .onNotification(.didConnectToServer) { server in

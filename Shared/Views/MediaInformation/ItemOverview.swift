@@ -43,6 +43,7 @@ struct ItemOverviewView: View {
         }
         .scrollIndicators(.hidden)
         .navigationTitle(item.displayTitle)
+        .backport
         .toolbarTitleDisplayMode(.inline)
         .navigationBarCloseButton {
             router.dismiss()

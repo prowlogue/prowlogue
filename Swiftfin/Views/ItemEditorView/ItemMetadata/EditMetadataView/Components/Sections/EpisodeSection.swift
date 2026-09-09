@@ -7,6 +7,7 @@
 //
 
 import Combine
+import Engine
 import JellyfinAPI
 import SwiftUI
 

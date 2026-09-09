@@ -13,7 +13,7 @@ import SwiftUI
 
 /// - Note: Do not use this view directly.
 /// Use `SecureField.init(_:text:maskToggle)` instead
-struct _UnmaskSecureField: PlatformViewRepresentable {
+struct _UnmaskSecureField: UIViewRepresentable {
 
     private var submitAction: () -> Void
     private let text: Binding<String>

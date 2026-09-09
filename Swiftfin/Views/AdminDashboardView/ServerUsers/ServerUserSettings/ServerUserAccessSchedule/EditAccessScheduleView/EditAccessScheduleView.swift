@@ -6,10 +6,14 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
+import Defaults
 import JellyfinAPI
 import SwiftUI
 
 struct EditAccessScheduleView: View {
+
+    @Default(.accentColor)
+    private var accentColor
 
     @ObservedObject
     var viewModel: ServerUserAdminViewModel
@@ -56,6 +60,7 @@ struct EditAccessScheduleView: View {
                 }
             }
         }
+        .backport
         .toolbarTitleDisplayMode(.inline)
         .navigationTitle(L10n.accessSchedules.localizedCapitalized)
         .navigationBarBackButtonHidden(isEditing)
@@ -69,33 +74,24 @@ struct EditAccessScheduleView: View {
 
             ToolbarItem(placement: .topBarTrailing) {
                 if isEditing {
-                    Button(L10n.cancel, role: .cancel) {
+                    Button(L10n.cancel) {
                         isEditing.toggle()
                         selectedSchedules.removeAll()
                         UIDevice.impact(.light)
                     }
-                    .foregroundStyle(.primary, .secondary)
-                    .if(true) { view in
-                        if #available(iOS 26.0, *) {
-                            view
-                        } else {
-                            view
-                                .backport
-                                .buttonStyle(.glass)
-                        }
-                    }
-                    .controlSize(.small)
+                    .buttonStyle(.toolbarPill)
+                    .foregroundStyle(accentColor)
                 }
             }
 
             ToolbarItem(placement: .bottomBar) {
                 if isEditing {
-                    Button(L10n.delete, role: .destructive) {
+                    Button(L10n.delete) {
                         isPresentingDeleteConfirmation = true
                     }
-                    .backport
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(.toolbarPill(.red))
                     .disabled(selectedSchedules.isEmpty)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
         }
@@ -144,18 +140,9 @@ struct EditAccessScheduleView: View {
                 selectedSchedules = Set(viewModel.user.policy?.accessSchedules ?? [])
             }
         }
-        .foregroundStyle(.primary, .secondary)
-        .if(true) { view in
-            if #available(iOS 26.0, *) {
-                view
-            } else {
-                view
-                    .backport
-                    .buttonStyle(.glass)
-            }
-        }
-        .controlSize(.small)
+        .buttonStyle(.toolbarPill)
         .disabled(!isEditing)
+        .foregroundStyle(accentColor)
     }
 
     @ViewBuilder

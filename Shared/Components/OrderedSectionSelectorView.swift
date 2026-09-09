@@ -14,7 +14,7 @@ struct OrderedSectionSelectorView<Element: Displayable & Hashable>: View {
     private var editMode
 
     @StateObject
-    private var selection: PublishedBox<[Element]>
+    private var selection: BindingBox<[Element]>
 
     private let data: [Element]
     private let removable: [Element]
@@ -26,7 +26,7 @@ struct OrderedSectionSelectorView<Element: Displayable & Hashable>: View {
         sources: [Element],
         removable: [Element]? = nil
     ) {
-        self._selection = StateObject(wrappedValue: PublishedBox(source: selection))
+        self._selection = StateObject(wrappedValue: BindingBox(source: selection))
         self.data = sources
         self.removable = removable ?? sources
         self.systemImage = systemImage
@@ -56,9 +56,7 @@ struct OrderedSectionSelectorView<Element: Displayable & Hashable>: View {
             editMode?.wrappedValue = isReordering ? .inactive : .active
         }
         #if os(iOS)
-        .backport
-            .buttonStyle(.glass)
-            .controlSize(.small)
+        .buttonStyle(.toolbarPill)
         #endif
     }
 

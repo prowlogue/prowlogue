@@ -6,6 +6,7 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
+import Defaults
 import JellyfinAPI
 import SwiftUI
 
@@ -76,7 +77,7 @@ struct DeviceDetailsView: View {
             if viewModel.background.is(.updating) {
                 ProgressView()
             }
-            let saveAction: () -> Void = {
+            Button(L10n.save) {
                 if let id = device.id {
                     viewModel.update(
                         id: id,
@@ -86,17 +87,7 @@ struct DeviceDetailsView: View {
                     )
                 }
             }
-
-            Group {
-                if #available(iOS 26, *) {
-                    Button(L10n.save, role: .confirm, action: saveAction)
-                } else {
-                    Button(L10n.save, action: saveAction)
-                        .backport
-                        .buttonStyle(.glassProminent)
-                        .controlSize(.small)
-                }
-            }
+            .buttonStyle(.toolbarPill)
             .disabled(temporaryCustomName == device.customName)
         }
         .errorMessage($viewModel.error)

@@ -53,6 +53,7 @@ struct FilterView: View {
             }
         }
         .navigationTitle(type.displayTitle)
+        .backport
         .toolbarTitleDisplayMode(.inline)
         .navigationBarCloseButton {
             router.dismiss()

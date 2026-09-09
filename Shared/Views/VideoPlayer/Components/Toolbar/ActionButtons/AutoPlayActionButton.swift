@@ -6,7 +6,7 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
-import FactoryKit
+import Factory
 import JellyfinAPI
 import SwiftUI
 
@@ -16,7 +16,7 @@ extension VideoPlayer.PlaybackControls.Toolbar.ActionButtons {
 
     struct AutoPlay: View {
 
-        @ViewContextContains(.isInMenu)
+        @Environment(\.isInMenu)
         private var isInMenu
 
         @EnvironmentObject

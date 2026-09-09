@@ -7,7 +7,7 @@
 //
 
 import CoreStore
-import FactoryKit
+import Factory
 import Foundation
 import JellyfinAPI
 import Logging
@@ -60,13 +60,15 @@ extension SwiftfinStore {
         )
     }()
 
+    private static let storeFileName = "Prowlogue.sqlite"
+
     private static let storage: SQLiteStore = {
         SQLiteStore(
-            fileName: "Swiftfin.sqlite"
+            fileName: storeFileName
         )
     }()
 
-    private static let appOwnerID = "swiftfinApp"
+    private static let appOwnerID = "prowlogueApp"
 
     static func setupDataStack() async throws {
         var migrationTypes = try dataStack.requiredMigrationsForStorage(storage)

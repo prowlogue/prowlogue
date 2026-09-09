@@ -7,7 +7,7 @@
 //
 
 import AVKit
-import FactoryKit
+import Factory
 import JellyfinAPI
 import Logging
 import SwiftUI
@@ -50,9 +50,10 @@ struct NativeVideoPlayer: View {
             manager.start()
         }
         .prefersStatusBarHidden()
-        .onChange(of: presentationCoordinator.isPresented) {
+        .backport
+        .onChange(of: presentationCoordinator.isPresented) { _, isPresented in
             Container.shared.mediaPlayerManager.reset()
-            guard !presentationCoordinator.isPresented else { return }
+            guard !isPresented else { return }
             manager.stop()
         }
         .alert(
@@ -74,7 +75,7 @@ struct NativeVideoPlayer: View {
 
 extension NativeVideoPlayer {
 
-    private struct NativeVideoPlayerView: PlatformViewControllerRepresentable {
+    private struct NativeVideoPlayerView: UIViewControllerRepresentable {
 
         let proxy: AVMediaPlayerProxy
 

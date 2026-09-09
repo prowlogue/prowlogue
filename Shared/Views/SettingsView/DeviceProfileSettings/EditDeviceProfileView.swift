@@ -55,7 +55,7 @@ extension CustomDeviceProfilesView {
                     }
                 }
                 .topBarTrailing {
-                    let saveAction: () -> Void = {
+                    Button(L10n.save) {
                         if createProfile {
                             customDeviceProfiles.append(profile)
                         } else {
@@ -64,33 +64,21 @@ extension CustomDeviceProfilesView {
                         UIDevice.impact(.light)
                         router.dismiss()
                     }
-
-                    Group {
-                        #if os(iOS)
-                        if #available(iOS 26, *) {
-                            Button(L10n.save, role: .confirm, action: saveAction)
-                        } else {
-                            Button(L10n.save, action: saveAction)
-                                .backport
-                                .buttonStyle(.glassProminent)
-                                .controlSize(.small)
-                        }
-                        #else
-                        Button(L10n.save, action: saveAction)
-                        #endif
-                    }
                     .disabled(!isValid)
+                    #if os(iOS)
+                        .buttonStyle(.toolbarPill)
+                    #endif
                 }
-                #if os(iOS)
+            #if os(iOS)
                 .navigationBarBackButtonHidden()
                 .navigationBarCloseButton {
                     isPresentingNotSaved = true
                 }
-                #else
+            #else
                 .onExitCommand {
                     isPresentingNotSaved = true
                 }
-                #endif
+            #endif
         }
 
         @ViewBuilder

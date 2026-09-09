@@ -6,103 +6,160 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
-import FactoryKit
+import BlurHashKit
+import Factory
 import Foundation
 import JellyfinAPI
 import UIKit
 
+// TODO: figure out what to do about screen scaling with .main being deprecated
+//       - maxWidth assume already scaled?
+// TODO: change "series" image sources to "parent"
+//       - for episodes and extras
+
 extension BaseItemDto {
 
-    /// Image source for this `BaseItemDto`
-    func imageSource(
-        _ type: ImageType,
-        tag: String? = nil,
-        environment: some WithImageSourceOptions
-    ) -> ImageSource {
-        let resolvedTag = tag ?? imageTag(for: type)
+    // MARK: Item Images
 
-        return makeImageSource(
-            itemID: id,
-            type: type,
-            tag: resolvedTag,
-            blurHash: blurHash(for: type, tag: resolvedTag),
-            environment: environment
-        )
-    }
-
-    /// Image source for a specified `BaseItemDto`
-    func imageSource(
-        itemID: String?,
-        _ type: ImageType,
-        tag: String? = nil,
-        environment: some WithImageSourceOptions
-    ) -> ImageSource {
-        makeImageSource(
-            itemID: itemID,
-            type: type,
-            tag: tag,
-            blurHash: nil,
-            environment: environment
-        )
-    }
-
-    private func makeImageSource(
-        itemID: String?,
-        type: ImageType,
-        tag: String?,
-        blurHash: String?,
-        environment: some WithImageSourceOptions
-    ) -> ImageSource {
-        ImageSource(
-            url: itemID.flatMap {
-                imageURL(
-                    itemID: $0,
-                    type,
-                    tag: tag,
-                    environment: environment
-                )
-            },
-            blurHash: blurHash
-        )
-    }
-
-    private func blurHash(for type: ImageType, tag: String?) -> String? {
-        guard type != .logo,
-              let blurHashes = imageBlurHashes?[type] else { return nil }
-
-        if let tag, let taggedBlurHash = blurHashes[tag] {
-            return taggedBlurHash
-        }
-
-        return blurHashes.values.first
-    }
-
-    private func imageTag(for type: ImageType) -> String? {
-        switch type {
-        case .backdrop:
-            backdropImageTags?.first
-        case .screenshot:
-            screenshotImageTags?.first
-        default:
-            imageTags?[type.rawValue]
-        }
-    }
-
-    private func imageURL(
-        itemID: String? = nil,
+    func imageURL(
         _ type: ImageType,
         index: Int? = nil,
-        tag: String? = nil,
-        environment: some WithImageSourceOptions
+        maxWidth: CGFloat? = nil,
+        maxHeight: CGFloat? = nil,
+        quality: Int? = nil,
+        tag: String? = nil
     ) -> URL? {
-        guard let itemID else { return nil }
+        _imageURL(
+            type,
+            index: index,
+            maxWidth: maxWidth,
+            maxHeight: maxHeight,
+            quality: quality,
+            itemID: id ?? "",
+            tag: tag
+        )
+    }
 
-        // TODO: put into environment?
-        let scale = UITraitCollection.current.displayScale
+    // TODO: will server actually only have a single blurhash per type?
+    //       - makes `firstBlurHash` redundant
+    func blurHash(for type: ImageType) -> BlurHash? {
+        guard let blurHashString = blurHashString(for: type) else {
+            return nil
+        }
 
-        let scaleWidth = environment.maxWidth.map { Int($0 * scale) }
-        let scaleHeight = environment.maxHeight.map { Int($0 * scale) }
-        let validQuality = environment.quality.map { clamp($0, min: 1, max: 100) }
+        return BlurHash(string: blurHashString)
+    }
+
+    func blurHashString(for type: ImageType) -> String? {
+        guard type != .logo else { return nil }
+
+        if let tag = imageTags?[type.rawValue], let taggedBlurHash = imageBlurHashes?[type]?[tag] {
+            return taggedBlurHash
+        } else if let firstBlurHash = imageBlurHashes?[type]?.values.first {
+            return firstBlurHash
+        }
+
+        return nil
+    }
+
+    func imageSource(
+        _ type: ImageType,
+        index: Int? = nil,
+        maxWidth: CGFloat? = nil,
+        maxHeight: CGFloat? = nil,
+        quality: Int? = nil,
+        tag: String? = nil
+    ) -> ImageSource {
+        _imageSource(
+            type,
+            index: index,
+            maxWidth: maxWidth,
+            maxHeight: maxHeight,
+            quality: quality,
+            tag: tag
+        )
+    }
+
+    // MARK: Series Images
+
+    /// - Note: Will force the creation of an image source even if it doesn't have a tag, due
+    /// to episodes also retrieving series images in some areas. This may cause more 404s.
+    func seriesImageURL(
+        _ type: ImageType,
+        index: Int? = nil,
+        maxWidth: CGFloat? = nil,
+        maxHeight: CGFloat? = nil,
+        quality: Int? = nil
+    ) -> URL? {
+        _imageURL(
+            type,
+            index: index,
+            maxWidth: maxWidth,
+            maxHeight: maxHeight,
+            quality: quality,
+            itemID: seriesID ?? "",
+            requireTag: false
+        )
+    }
+
+    /// - Note: Will force the creation of an image source even if it doesn't have a tag, due
+    /// to episodes also retrieving series images in some areas. This may cause more 404s.
+    func seriesImageSource(
+        _ type: ImageType,
+        index: Int? = nil,
+        maxWidth: CGFloat? = nil,
+        maxHeight: CGFloat? = nil,
+        quality: Int? = nil
+    ) -> ImageSource {
+        let url = _imageURL(
+            type,
+            index: index,
+            maxWidth: maxWidth,
+            maxHeight: maxHeight,
+            quality: quality,
+            itemID: seriesID ?? "",
+            requireTag: false
+        )
+
+        return ImageSource(
+            url: url,
+            blurHash: nil
+        )
+    }
+
+    // MARK: private
+
+    func _imageURL(
+        _ type: ImageType,
+        index: Int? = nil,
+        maxWidth: CGFloat?,
+        maxHeight: CGFloat?,
+        quality: Int?,
+        itemID: String,
+        tag: String? = nil,
+        requireTag: Bool = true
+    ) -> URL? {
+        // tvOS renders its UI at a fixed 1x, so points == pixels. Read the display scale from the trait
+        // environment (the modern replacement for the now-deprecated `UIScreen.main` — this is the one part
+        // of upstream Swiftfin #2068 we adopt) but fall back to 1 when it's UNSPECIFIED: a trait collection's
+        // `displayScale` is 0.0 when read outside a trait environment — e.g. our off-main prefetch and
+        // model-owned image-source tasks — and 0 would zero the request out, so the server would return the
+        // FULL-RESOLUTION image. (Apple docs: `UITraitCollection.displayScale` "default … is 0.0
+        // (indicating unspecified)".) On tvOS the resolved value is always 1, so this matches the previous
+        // `UIScreen.main.nativeScale` behavior exactly while dropping the deprecated API.
+        let displayScale = UITraitCollection.current.displayScale
+        let pixelScale = displayScale > 0 ? displayScale : 1
+
+        let scaleWidth = maxWidth.map { Int($0 * pixelScale) }
+        // NOTE (Prowlogue): both dimensions are mapped independently — a maxHeight-ONLY request must still
+        // send a size, else (both dims nil) the server returns the FULL-RESOLUTION image (e.g. every title
+        // logo). Upstream #2068 independently made this same fix, validating ours.
+        let scaleHeight = maxHeight.map { Int($0 * pixelScale) }
+        let validQuality = quality.map { clamp($0, min: 1, max: 100) }
+
+        let tag = tag ?? getImageTag(for: type)
+
+        guard tag != nil || !requireTag else { return nil }
 
         guard let client = Container.shared.currentUserSession()?.client else { return nil }
 
@@ -122,5 +179,41 @@ extension BaseItemDto {
         )
 
         return client.url(with: request)
+    }
+
+    private func getImageTag(for type: ImageType) -> String? {
+        switch type {
+        case .backdrop:
+            backdropImageTags?.first
+        case .screenshot:
+            screenshotImageTags?.first
+        default:
+            imageTags?[type.rawValue]
+        }
+    }
+
+    private func _imageSource(
+        _ type: ImageType,
+        index: Int? = nil,
+        maxWidth: CGFloat?,
+        maxHeight: CGFloat?,
+        quality: Int?,
+        tag: String? = nil
+    ) -> ImageSource {
+        let url = _imageURL(
+            type,
+            index: index,
+            maxWidth: maxWidth,
+            maxHeight: maxHeight,
+            quality: quality,
+            itemID: id ?? "",
+            tag: tag
+        )
+        let blurHash = blurHashString(for: type)
+
+        return ImageSource(
+            url: url,
+            blurHash: blurHash
+        )
     }
 }

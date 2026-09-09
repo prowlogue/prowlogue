@@ -76,40 +76,21 @@ struct QuickConnectAuthorizeView: View {
             }
 
             if viewModel.state == .authorizing {
-                Button(role: .cancel) {
+                Button(L10n.cancel, role: .cancel) {
                     viewModel.cancel()
                     isCodeFocused = true
-                } label: {
-                    Text(L10n.cancel)
-                        .frame(maxWidth: .infinity)
                 }
-                .listRowInsets(.zero)
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-                .fontWeight(.semibold)
-                .backport
-                .buttonStyle(.glassProminent.shadow(false))
-                #if os(iOS)
-                .controlSize(.large)
-                #endif
+                .buttonStyle(.primary)
             } else {
-                Button {
+                Button(L10n.authorize) {
                     viewModel.authorize(code: code)
-                } label: {
-                    Text(L10n.authorize)
-                        .frame(maxWidth: .infinity)
                 }
-                .listRowInsets(.zero)
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-                .fontWeight(.semibold)
-                .backport
-                .buttonStyle(.glassProminent.shadow(false))
-                .tint(accentColor)
-                #if os(iOS)
-                .controlSize(.large)
-                #endif
+                .buttonStyle(.primary)
                 .disabled(code.count != 6 || viewModel.state == .authorizing)
+                .foregroundStyle(
+                    accentColor.overlayColor,
+                    accentColor
+                )
             }
         }
         .interactiveDismissDisabled(viewModel.state == .authorizing)
@@ -118,8 +99,8 @@ struct QuickConnectAuthorizeView: View {
         .onFirstAppear {
             isCodeFocused = true
         }
-        .onChange(of: code) {
-            code = String(code.prefix(6))
+        .onChange(of: code) { newValue in
+            code = String(newValue.prefix(6))
         }
         .onReceive(viewModel.$error) { error in
             guard error != nil else { return }

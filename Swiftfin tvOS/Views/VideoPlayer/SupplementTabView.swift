@@ -6,15 +6,15 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
+import Engine
 import SwiftUI
 import UIKit
 
 /// `TabView` acts weird with horizontal stacks, workaround with manual supplement presentation
-struct SupplementTabView<Item: Identifiable, Content: View>: PlatformViewControllerRepresentable {
+struct SupplementTabView<Item: Identifiable, Content: View>: UIViewControllerRepresentable {
 
     let items: [Item]
     let selection: Item.ID?
-    let onPresentedSelectionChange: (Item.ID?) -> Void
 
     @ViewBuilder
     let content: (Item) -> Content
@@ -33,7 +33,6 @@ struct SupplementTabView<Item: Identifiable, Content: View>: PlatformViewControl
         context.coordinator.sync(
             items: items,
             selection: selection,
-            onPresentedSelectionChange: onPresentedSelectionChange,
             content: content
         )
     }
@@ -55,19 +54,16 @@ struct SupplementTabView<Item: Identifiable, Content: View>: PlatformViewControl
         private var pendingSelectionWorkItem: DispatchWorkItem?
         private var transitionID: Int = 0
         private var hosts: [Item.ID: HostingController<Content>] = [:]
-        private var onPresentedSelectionChange: ((Item.ID?) -> Void)?
 
         private let selectionDebounceInterval: TimeInterval = 0.5
 
         func sync(
             items: [Item],
             selection: Item.ID?,
-            onPresentedSelectionChange: @escaping (Item.ID?) -> Void,
             @ViewBuilder content: (Item) -> Content
         ) {
             guard let container else { return }
 
-            self.onPresentedSelectionChange = onPresentedSelectionChange
             updateHosts(with: items, content: content)
             selectDebounced(selection, in: container)
         }
@@ -117,8 +113,6 @@ struct SupplementTabView<Item: Identifiable, Content: View>: PlatformViewControl
         }
 
         private func selectDebounced(_ selection: Item.ID?, in container: UIViewController) {
-            guard pendingSelectionWorkItem == nil || selection != pendingSelectionID else { return }
-
             pendingSelectionWorkItem?.cancel()
             pendingSelectionWorkItem = nil
             pendingSelectionID = selection
@@ -149,11 +143,7 @@ struct SupplementTabView<Item: Identifiable, Content: View>: PlatformViewControl
 
         private func select(_ selection: Item.ID?, in container: UIViewController) {
             guard let selection else {
-                let hadVisibleSelection = visibleID != nil
                 removeVisibleHost(animated: true)
-                if hadVisibleSelection {
-                    onPresentedSelectionChange?(nil)
-                }
                 return
             }
 
@@ -173,7 +163,6 @@ struct SupplementTabView<Item: Identifiable, Content: View>: PlatformViewControl
             remove(host)
             add(host, to: container, alpha: 0)
             visibleID = selection
-            onPresentedSelectionChange?(selection)
             transition(from: previousHost, to: host)
         }
 

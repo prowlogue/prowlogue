@@ -15,7 +15,8 @@ func BulletedList(
     MarkedList(spacing: spacing) { _ in
         ZStack {
             // Capture local font line height
-            Text(String.space)
+            // swiftlint:disable:next hard_coded_display_string
+            Text(" ")
                 .hidden()
 
             Circle()

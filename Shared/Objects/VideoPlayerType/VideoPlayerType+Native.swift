@@ -181,6 +181,7 @@ extension VideoPlayerType {
                     VideoRangeType.sdr
                     VideoRangeType.doviWithSDR
                 }
+                /// AVPlayer has no deinterlacer — interlaced AVC must be transcoded (upstream #2128).
                 ProfileCondition(
                     condition: .notEquals,
                     isRequired: false,
@@ -202,6 +203,13 @@ extension VideoPlayerType {
                 ) {
                     nativeHDRProfiles
                 }
+                /// Upstream (Swiftfin #2109): AVFoundation only decodes HEVC whose parameter sets (VPS/SPS/PPS)
+                /// live out-of-band in the sample description — i.e. the `hvc1` / `dvh1` codec tags. The `hev1`
+                /// and `dvhe` tags carry them inline in the bitstream and are rejected by the whole Apple media
+                /// stack (ffmpeg/libx265 emits `hev1` by default, so these files are common). Without this
+                /// condition the server Direct Plays such a file to AVPlayer and playback fails outright —
+                /// which matters doubly here, since `VideoPlayerType.hybrid(for:)` routes HDR/DoVi to `.native`.
+                /// Requiring the tag makes the server remux to an `hvc1` fMP4 instead (video copied, HDR/DV kept).
                 ProfileCondition(
                     condition: .equalsAny,
                     isRequired: true,
@@ -210,6 +218,7 @@ extension VideoPlayerType {
                     "hvc1"
                     "dvh1"
                 }
+                /// Apple TV 4K decodes HEVC up to 4K60; anything faster needs a transcode.
                 ProfileCondition(
                     condition: .lessThanEqual,
                     isRequired: true,
@@ -265,6 +274,10 @@ extension VideoPlayerType {
         if PlaybackCapabilities.supportsHDR10 || PlaybackCapabilities.supportsDolbyVision {
             VideoRangeType.doviWithHDR10
             VideoRangeType.doviWithHDR10Plus
+            /// Upstream (Swiftfin #2134): `doviWithEL` is Dolby Vision Profile 7 (dual-layer, BL + enhancement
+            /// layer). Claiming it stops the server stripping the DV layer and remuxing — the base layer is
+            /// HEVC Main10 and plays; the EL is simply ignored. Consistent with the `doviWithELHDR10Plus`
+            /// claim already below, which is the strictly harder case.
             VideoRangeType.doviWithEL
             VideoRangeType.doviWithELHDR10Plus
         }

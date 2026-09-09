@@ -6,6 +6,7 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
+import Defaults
 import JellyfinAPI
 import SwiftUI
 
@@ -61,6 +62,7 @@ struct EditServerUserAccessTagsView: View {
                 }
             }
         }
+        .backport
         .toolbarTitleDisplayMode(.inline)
         .navigationTitle(L10n.accessTags.localizedCapitalized)
         .navigationBarBackButtonHidden(isEditing)
@@ -75,32 +77,22 @@ struct EditServerUserAccessTagsView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 if isEditing {
-                    Button(L10n.cancel, role: .cancel) {
+                    Button(L10n.cancel) {
                         isEditing = false
                         UIDevice.impact(.light)
                         selectedTags.removeAll()
                     }
-                    .foregroundStyle(.primary, .secondary)
-                    .if(true) { view in
-                        if #available(iOS 26.0, *) {
-                            view
-                        } else {
-                            view
-                                .backport
-                                .buttonStyle(.glass)
-                        }
-                    }
-                    .controlSize(.small)
+                    .buttonStyle(.toolbarPill)
                 }
             }
             ToolbarItem(placement: .bottomBar) {
                 if isEditing {
-                    Button(L10n.delete, role: .destructive) {
+                    Button(L10n.delete) {
                         isPresentingDeleteConfirmation = true
                     }
-                    .backport
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(.toolbarPill(.red))
                     .disabled(selectedTags.isEmpty)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
         }
@@ -190,17 +182,7 @@ struct EditServerUserAccessTagsView: View {
         Button(isAllSelected ? L10n.removeAll : L10n.selectAll) {
             selectedTags = isAllSelected ? [] : Set(blockedTags + allowedTags)
         }
-        .foregroundStyle(.primary, .secondary)
-        .if(true) { view in
-            if #available(iOS 26.0, *) {
-                view
-            } else {
-                view
-                    .backport
-                    .buttonStyle(.glass)
-            }
-        }
-        .controlSize(.small)
+        .buttonStyle(.toolbarPill)
         .disabled(!isEditing)
     }
 

@@ -28,6 +28,14 @@ extension VideoPlayer.PlaybackControls {
         @EnvironmentObject
         private var manager: MediaPlayerManager
 
+        private func onPressed(isPressed: Bool) {
+            if isPressed {
+                containerState.timer.stop()
+            } else {
+                containerState.timer.poke()
+            }
+        }
+
         private var shouldShowJumpButtons: Bool {
             !manager.item.isLiveStream
         }
@@ -105,7 +113,7 @@ extension VideoPlayer.PlaybackControls {
                     jumpForwardButton
                 }
             }
-            .modifier(OverlayButtonStyleModifier())
+            .buttonStyle(OverlayButtonStyle(onPressed: onPressed))
             .padding(.horizontal, 50)
             .offset(y: centerOffsetBox.value / 2)
         }

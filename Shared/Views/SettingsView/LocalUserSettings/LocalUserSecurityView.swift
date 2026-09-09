@@ -6,6 +6,7 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
+import Engine
 import SwiftUI
 
 // TODO: present toast when authentication successfully changed
@@ -110,27 +111,18 @@ struct LocalUserSecurityView: View {
         }
         .topBarTrailing {
             if let user = viewModel.userSession?.user {
-                let isChangingPIN = signInPolicy == .requirePin && signInPolicy == user.accessPolicy
-                let saveAction: () -> Void = {
+                Button(
+                    signInPolicy == .requirePin && signInPolicy == user.accessPolicy
+                        ? L10n.changePin
+                        : L10n.save
+                ) {
                     Task { @MainActor in
                         await performSaveSecurityPolicy()
                     }
                 }
-
-                Group {
-                    #if os(iOS)
-                    if #available(iOS 26, *), !isChangingPIN {
-                        Button(L10n.save, role: .confirm, action: saveAction)
-                    } else {
-                        Button(isChangingPIN ? L10n.changePin : L10n.save, action: saveAction)
-                            .backport
-                            .buttonStyle(.glassProminent)
-                            .controlSize(.small)
-                    }
-                    #else
-                    Button(isChangingPIN ? L10n.changePin : L10n.save, action: saveAction)
-                    #endif
-                }
+                #if os(iOS)
+                .buttonStyle(.toolbarPill)
+                #endif
             }
         }
         .errorMessage($error)

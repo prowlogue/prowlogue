@@ -6,7 +6,7 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
-import FactoryKit
+import Factory
 import JellyfinAPI
 import SwiftUI
 
@@ -57,6 +57,11 @@ extension SettingsView {
                 }
             }
             .foregroundStyle(.primary, .secondary)
+            // tvOS: a plain Button's Select press is swallowed inside a Form; `.listRow` wires it and
+            // matches the native flat "white on focus" row look (see ChevronButton for the style).
+            #if os(tvOS)
+                .buttonStyle(.listRow)
+            #endif
         }
     }
 }

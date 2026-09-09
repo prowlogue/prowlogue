@@ -55,46 +55,24 @@ struct ConnectToServerView: View {
         }
 
         if viewModel.state == .connecting {
-            Button(role: .cancel) {
+            Button(L10n.cancel, role: .cancel) {
                 viewModel.cancel()
-            } label: {
-                Text(L10n.cancel)
-                    .frame(maxWidth: .infinity)
             }
-            .listRowInsets(.zero)
-            .listRowBackground(Color.clear)
-            #if os(iOS)
-            .listRowSeparator(.hidden)
-            #endif
-            .fontWeight(.semibold)
-            .backport
-            .buttonStyle(.glassProminent.shadow(false))
-            #if os(iOS)
-            .controlSize(.large)
-            #endif
+            .buttonStyle(.primary)
             .frame(maxHeight: 75)
         } else {
-            Button {
+            Button(L10n.connect) {
                 isURLFocused = false
                 viewModel.connect(url: url)
-            } label: {
-                Text(L10n.connect)
-                    .frame(maxWidth: .infinity)
             }
-            .listRowInsets(.zero)
-            .listRowBackground(Color.clear)
-            #if os(iOS)
-            .listRowSeparator(.hidden)
-            #endif
-            .fontWeight(.semibold)
-            .backport
-            .buttonStyle(.glassProminent.shadow(false))
-            .tint(accentColor)
-            #if os(iOS)
-            .controlSize(.large)
-            #endif
+            .buttonStyle(.primary)
             .frame(maxHeight: 75)
             .disabled(url.isEmpty)
+            .foregroundStyle(
+                accentColor.overlayColor,
+                accentColor
+            )
+            .opacity(url.isEmpty ? 0.5 : 1)
         }
     }
 
@@ -127,7 +105,7 @@ struct ConnectToServerView: View {
 
             localServersSection
         }
-        .toolbarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.inline)
         .navigationBarCloseButton(disabled: viewModel.state == .connecting) {
             router.dismiss()
         }
@@ -167,13 +145,30 @@ struct ConnectToServerView: View {
                     ProgressView()
                 }
             }
-            .sheet(item: $duplicateServer) { server in
-                DuplicateServerConnectionView(server: server) {
-                    viewModel.addConnection(serverState: server)
-                    duplicateServer = nil
-                    router.dismiss()
+        #if os(tvOS)
+            ._alert(
+                L10n.connection,
+                isPresented: $duplicateServer.isNotNil()
+            ) {
+                if let server = duplicateServer {
+                    DuplicateServerConnectionView(server: server) {
+                        viewModel.addConnection(serverState: server)
+                        duplicateServer = nil
+                        router.dismiss()
+                    }
                 }
             }
+        #else
+            .sheet(item: $duplicateServer) { server in
+                NavigationStack {
+                    DuplicateServerConnectionView(server: server) {
+                        viewModel.addConnection(serverState: server)
+                        duplicateServer = nil
+                        router.dismiss()
+                    }
+                }
+            }
+        #endif
             .errorMessage($viewModel.error)
     }
 }

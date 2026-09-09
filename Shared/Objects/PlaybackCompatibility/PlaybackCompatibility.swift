@@ -14,6 +14,11 @@ enum PlaybackCompatibility: String, CaseIterable, Defaults.Serializable, Display
     case auto
     case mostCompatible
     case directPlay
+    /// Prowlogue (tvOS): force the VIDEO/container to Direct Play, but keep the engine's supported audio
+    /// codecs so the server transcodes audio the device can't decode (e.g. Dolby TrueHD/DTS) instead of
+    /// sending an undecodable stream (= silence). MKV / high-bitrate video plays untouched, audio always
+    /// works. See `DeviceProfile.build`. (Surfaced only by the tvOS "Direct Play" setting.)
+    case preferDirectPlay
     case custom
 
     var displayTitle: String {
@@ -24,6 +29,8 @@ enum PlaybackCompatibility: String, CaseIterable, Defaults.Serializable, Display
             L10n.compatible
         case .directPlay:
             L10n.directPlay
+        case .preferDirectPlay:
+            "Preferred Direct Play"
         case .custom:
             L10n.custom
         }

@@ -18,8 +18,8 @@ extension VideoPlayerType {
         switch self {
         case .native:
             Self._nativeCodecProfiles
-        case .vlc, .mpv:
-            Self._vlcCodecProfiles
+        case .swiftfin:
+            Self._swiftfinCodecProfiles
         }
     }
 
@@ -49,6 +49,9 @@ extension VideoPlayerType {
             property: .videoLevel,
             value: "80"
         )
+        /// - Note: Upstream (Swiftfin #2128): the `isInterlaced` restriction is deliberately NOT shared.
+        /// VLC deinterlaces in software, so interlaced AVC Direct Plays there; only AVPlayer needs the
+        /// restriction, so it lives on the `.native` H.264 codec profile instead.
     }
 
     @ArrayBuilder<ProfileCondition>

@@ -7,7 +7,7 @@
 //
 
 import Defaults
-import FactoryKit
+import Factory
 import Foundation
 import SwiftUI
 import UIKit
@@ -25,7 +25,7 @@ extension UserDefaults {
     // MARK: App
 
     /// Settings that should apply to the app
-    static let appSuite = UserDefaults(suiteName: "swiftfinApp")!
+    static let appSuite: UserDefaults = UserDefaults(suiteName: "prowlogueApp")!
 
     // MARK: User
 
@@ -39,11 +39,71 @@ extension UserDefaults {
     }
 
     static func userSuite(id: String) -> UserDefaults {
-        UserDefaults(suiteName: id)!
+        UserSuiteDefaultsCache.suite(id: id)
     }
 }
 
-private extension Defaults.Keys {
+/// Memoizes user-suite `UserDefaults` instances and user-scoped `Defaults.Key`s.
+///
+/// `Defaults.Key.init` serializes its default value and synchronously calls
+/// `UserDefaults.register(defaults:)` on every construction, and the user-scoped key
+/// accessors below are computed properties — so without memoization that cost was paid
+/// on EVERY `@Default`/`Defaults[...]` access (per poster card, per player tick).
+/// Keys are cached per (userID, name), so a user/server switch naturally resolves a
+/// fresh set for the new suite; values are still read live through the key.
+private enum UserSuiteDefaultsCache {
+
+    private static let lock = NSLock()
+    private static var suites: [String: UserDefaults] = [:]
+    private static var keys: [String: Defaults.Keys] = [:]
+
+    static func suite(id: String) -> UserDefaults {
+        lock.lock()
+        defer { lock.unlock() }
+
+        if let cached = suites[id] { return cached }
+        let suite = makeSuite(id: id)
+        suites[id] = suite
+        return suite
+    }
+
+    private static func makeSuite(id: String) -> UserDefaults {
+        UserDefaults(suiteName: id)!
+    }
+
+    static func key<Value: Defaults.Serializable>(
+        _ name: String,
+        default defaultValue: Value
+    ) -> Defaults.Key<Value> {
+        let userID: String = switch Defaults[.lastSignedInUserID] {
+        case .signedOut: "default"
+        case let .signedIn(id): id
+        }
+
+        lock.lock()
+        defer { lock.unlock() }
+
+        let cacheKey = "\(userID)\u{1F}\(name)"
+        if let cached = keys[cacheKey] as? Defaults.Key<Value> {
+            return cached
+        }
+
+        let suite = suites[userID] ?? {
+            let suite = makeSuite(id: userID)
+            suites[userID] = suite
+            return suite
+        }()
+
+        let key = Defaults.Key<Value>(name, default: defaultValue, suite: suite)
+        keys[cacheKey] = key
+        return key
+    }
+}
+
+// `internal` (not `private`) so Prowlogue per-user keys — whose value types live in the tvOS target and so can't be
+// declared in this Shared file — can be stored in the signed-in user's own suite via `UserKey` (each user keeps
+// independent settings). `AppKey`/`UserKey` are generic storage helpers, not Prowlogue-specific logic.
+extension Defaults.Keys {
 
     static func AppKey<Value: Defaults.Serializable>(_ name: String) -> Key<Value?> {
         Key(name, suite: .appSuite)
@@ -54,7 +114,7 @@ private extension Defaults.Keys {
     }
 
     static func UserKey<Value: Defaults.Serializable>(_ name: String, default: Value) -> Key<Value> {
-        Key(name, default: `default`, suite: .currentUserSuite)
+        UserSuiteDefaultsCache.key(name, default: `default`)
     }
 }
 
@@ -66,7 +126,7 @@ extension Defaults.Keys {
     ///
     /// This is set externally whenever the app or user accent colors change,
     /// depending on the current app state.
-    static var accentColor: Key<Color> = AppKey("accentColor", default: .jellyfinPurple)
+    static var accentColor: Key<Color> = AppKey("accentColor", default: .white)
 
     /// The _real_ appearance key to be used.
     ///
@@ -80,8 +140,7 @@ extension Defaults.Keys {
 
     static let backgroundSignOutInterval: Key<TimeInterval> = AppKey("backgroundSignOutInterval", default: 3600)
     static let backgroundTimeStamp: Key<Date> = AppKey("backgroundTimeStamp", default: Date.now)
-    static let lastSignedInUserID: Key<UserSessionState> = AppKey("lastSignedInUserID", default: .signedOut)
-    static let lastServerInformationRefreshDate: Key<Date> = AppKey("lastServerInformationRefreshDate", default: .distantPast)
+    static let lastSignedInUserID: Key<UserSignInState> = AppKey("lastSignedInUserID", default: .signedOut)
 
     static let selectUserDisplayType: Key<LibraryDisplayType> = AppKey("selectUserDisplayType", default: .grid)
     static let selectUserServerSelection: Key<SelectUserServerSelection> = AppKey("selectUserServerSelection", default: .all)
@@ -100,7 +159,7 @@ extension Defaults.Keys {
     /// The accent color default for user contexts.
     /// Only use for `set`, use `accentColor` for `get`.
     static var userAccentColor: Key<Color> {
-        UserKey("userAccentColor", default: .jellyfinPurple)
+        UserKey("userAccentColor", default: .white)
     }
 
     /// The appearance default for user contexts.
@@ -112,21 +171,11 @@ extension Defaults.Keys {
     enum Customization {
 
         static var itemViewType: Key<ItemViewType> {
-            UserKey("mediaItemViewType", default: .enhanced)
+            UserKey("itemViewType", default: .compactLogo)
         }
 
-        static var itemBarActionButtons: Key<[ItemActionButton]> {
-            UserKey(
-                "itemBarActionButtons",
-                default: ItemActionButton.defaultBarActionButtons
-            )
-        }
-
-        static var itemMenuActionButtons: Key<[ItemActionButton]> {
-            UserKey(
-                "itemMenuActionButtons",
-                default: ItemActionButton.defaultMenuActionButtons
-            )
+        static var showPosterLabels: Key<Bool> {
+            UserKey("showPosterLabels", default: true)
         }
 
         static var nextUpPosterType: Key<PosterDisplayType> {
@@ -139,10 +188,6 @@ extension Defaults.Keys {
 
         static var latestInLibraryPosterType: Key<PosterDisplayType> {
             UserKey("latestInLibraryPosterType", default: .portrait)
-        }
-
-        static var shouldShowRecommendations: Key<Bool> {
-            UserKey("shouldShowRecommendations", default: true)
         }
 
         static var shouldShowMissingSeasons: Key<Bool> {
@@ -162,14 +207,36 @@ extension Defaults.Keys {
             UserKey("searchPosterType", default: .portrait)
         }
 
-        static var tabBarPlacement: Key<TabBarPlacement> {
-            UserKey("tabBarPlacement", default: .sidebar)
+        enum CinematicItemViewType {
+
+            static var usePrimaryImage: Key<Bool> {
+                UserKey("cinematicItemViewTypeUsePrimaryImage", default: false)
+            }
         }
 
-        enum Poster {
+        enum Episodes {
 
-            static var configuration: Key<PosterConfiguration> {
-                UserKey("posterConfiguration", default: .default)
+            static var useSeriesLandscapeBackdrop: Key<Bool> {
+                UserKey("useSeriesBackdrop", default: true)
+            }
+        }
+
+        enum Indicators {
+
+            static var showFavorited: Key<Bool> {
+                UserKey("showFavoritedIndicator", default: true)
+            }
+
+            static var showProgress: Key<Bool> {
+                UserKey("showProgressIndicator", default: true)
+            }
+
+            static var showUnplayed: Key<UnplayedIndicatorType> {
+                UserKey("showUnplayedIndicator", default: .indicator)
+            }
+
+            static var showPlayed: Key<Bool> {
+                UserKey("showPlayedIndicator", default: true)
             }
         }
 
@@ -190,15 +257,16 @@ extension Defaults.Keys {
                 UserKey("letterPickerOrientation", default: .disabled)
             }
 
-            static var style: Key<LibraryStyle> {
-                UserKey(
-                    "libraryStyle",
-                    default: .init(
-                        displayType: .grid,
-                        posterDisplayType: .portrait,
-                        listColumnCount: 1
-                    )
-                )
+            static var displayType: Key<LibraryDisplayType> {
+                UserKey("libraryViewType", default: .grid)
+            }
+
+            static var posterType: Key<PosterDisplayType> {
+                UserKey("libraryPosterType", default: .portrait)
+            }
+
+            static var listColumnCount: Key<Int> {
+                UserKey("listColumnCount", default: 1)
             }
 
             static var randomImage: Key<Bool> {
@@ -233,10 +301,6 @@ extension Defaults.Keys {
                     default: 366 * 86400
                 )
             }
-
-            static var showRecentlyPlayed: Key<Bool> {
-                UserKey("showRecentlyPlayed", default: false)
-            }
         }
 
         enum Search {
@@ -252,6 +316,10 @@ extension Defaults.Keys {
 
     enum VideoPlayer {
 
+        // Legacy alias — shares the same storage id as `Playback.appMaximumBitrate` below. Kept in sync
+        // so reads through either path resolve to the same default. Default `.max` (uncapped → prefer Direct
+        // Play, best quality); users can lower it, or pick "Auto" (a one-shot bandwidth test, measured once
+        // per session and reused).
         static var appMaximumBitrate: Key<PlaybackBitrate> {
             UserKey("appMaximumBitrate", default: .max)
         }
@@ -272,11 +340,11 @@ extension Defaults.Keys {
         }
 
         static var jumpBackwardInterval: Key<MediaJumpInterval> {
-            UserKey("jumpBackwardLength", default: .fifteen)
+            UserKey("jumpBackwardLength", default: .ten)
         }
 
         static var jumpForwardInterval: Key<MediaJumpInterval> {
-            UserKey("jumpForwardLength", default: .fifteen)
+            UserKey("jumpForwardLength", default: .ten)
         }
 
         static var menuActionButtons: Key<[VideoPlayerActionButton]> {
@@ -298,7 +366,7 @@ extension Defaults.Keys {
         }
 
         static var videoPlayerType: Key<VideoPlayerType> {
-            UserKey("videoPlayerType", default: .vlc)
+            UserKey("videoPlayerType", default: .swiftfin)
         }
 
         enum Gesture {
@@ -356,12 +424,17 @@ extension Defaults.Keys {
         }
 
         enum Playback {
+            // Default to "Maximum" (uncapped → prefer Direct Play): full-quality remux with no transcode,
+            // fastest start, best picture. Users on a constrained network can pick a fixed cap, or "Auto"
+            // (a one-shot bandwidth test measured once per session and reused — see
+            // `PlaybackBitrate.getMaxBitrate` + `AutoBitrateProbe`).
+            /// Upstream (Swiftfin #2194): a client-side ceiling on video height. `.max` = uncapped.
             static var appMaximumResolution: Key<PlaybackResolution> {
                 UserKey("appMaximumResolution", default: .max)
             }
 
             static var appMaximumBitrate: Key<PlaybackBitrate> {
-                UserKey("appMaximumBitrate", default: .auto)
+                UserKey("appMaximumBitrate", default: .max)
             }
 
             static var appMaximumBitrateTest: Key<PlaybackBitrateTestSize> {
@@ -385,10 +458,19 @@ extension Defaults.Keys {
             }
         }
 
+        // TODO: transition into a SubtitleConfiguration instead of multiple types
         enum Subtitle {
 
-            static var configuration: Key<SubtitleConfiguration> {
-                UserKey("subtitleConfiguration", default: .default)
+            static var subtitleColor: Key<Color> {
+                UserKey("subtitleColor", default: .white)
+            }
+
+            static var subtitleFontName: Key<String> {
+                UserKey("subtitleFontName", default: UIFont.systemFont(ofSize: 14).fontName)
+            }
+
+            static var subtitleSize: Key<Int> {
+                UserKey("subtitleSize", default: 9)
             }
         }
 
@@ -402,20 +484,12 @@ extension Defaults.Keys {
     // Experimental settings
     enum Experimental {
 
-        static var mpvPlayer: Key<Bool> {
-            UserKey("experimentalMPVPlayer", default: false)
-        }
-
         static var downloads: Key<Bool> {
             UserKey("experimentalDownloads", default: false)
         }
 
         static var serverConnectionAutoSwitch: Key<Bool> {
             UserKey("experimentalServerConnectionAutoSwitch", default: false)
-        }
-
-        static var videoPlayerEPG: Key<Bool> {
-            UserKey("experimentalVideoPlayerEPG", default: false)
         }
     }
 
@@ -441,6 +515,11 @@ extension Defaults.Keys {
         Key(name, default: `default`, suite: .appSuite)
     }
 
+    static let isLiquidGlassEnabled: Key<Bool> = DebugKey("experimentalLiquidGlass", default: false)
     static let sendProgressReports: Key<Bool> = DebugKey("sendProgressReports", default: true)
+}
+#else
+extension Defaults.Keys {
+    static let isLiquidGlassEnabled: Key<Bool> = AppKey("experimentalLiquidGlass", default: false)
 }
 #endif

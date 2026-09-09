@@ -11,7 +11,6 @@ import SwiftUI
 
 extension NavigationRoute {
 
-    @MainActor
     static var downloadList: NavigationRoute {
         NavigationRoute(
             id: "downloadList"

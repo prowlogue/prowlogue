@@ -72,17 +72,29 @@ extension MediaPeopleSupplement {
 
         @ViewBuilder
         private func personView(for person: BaseItemPerson) -> some View {
+            #if os(iOS)
             PosterButton(
                 item: person,
-                displayType: .portrait
-            ) { _ in }
+                type: .portrait
+            ) { _ in
+            } label: {
+                PosterButton<BaseItemPerson>.TitleSubtitleContentView(item: person)
+            }
+            #else
+            PosterButton(
+                item: person,
+                type: .portrait
+            ) {} label: {
+                PosterButton<BaseItemPerson>.TitleSubtitleContentView(item: person)
+            }
+            #endif
         }
 
         @ViewBuilder
         private var iOSRegularView: some View {
             CollectionHStack(
                 uniqueElements: people,
-                id: \.id,
+                id: \.unwrappedIDHashOrZero,
                 layout: .minimumWidth(columnWidth: 80, rows: 1)
             ) { person in
                 personView(for: person)
@@ -96,7 +108,7 @@ extension MediaPeopleSupplement {
         var tvOSView: some View {
             CollectionVGrid(
                 uniqueElements: people,
-                id: \.id,
+                id: \.unwrappedIDHashOrZero,
                 layout: .columns(
                     10,
                     insets: .init(EdgeInsets.edgePadding),
@@ -144,8 +156,8 @@ extension MediaPeopleSupplement {
                 PosterImage(
                     item: person,
                     type: .portrait,
-                    size: .extraSmall,
-                    contentMode: .fit
+                    contentMode: .fit,
+                    maxWidth: 60
                 )
                 .frame(height: 90)
                 .padding(.vertical, 8)

@@ -114,10 +114,7 @@ private struct VideoPlayerSliderContent: SliderContentView {
     }
 
     private func progress(for value: Double) -> Double {
-        guard sliderState.total.isFinite,
-              sliderState.total > 0,
-              value.isFinite
-        else {
+        guard sliderState.total > 0 else {
             return 0
         }
 
@@ -126,18 +123,13 @@ private struct VideoPlayerSliderContent: SliderContentView {
 
     @ViewBuilder
     private func progressSegment(progress: Double, in size: CGSize) -> some View {
-        let width = size.width.isFinite ? max(0, size.width) : 0
-        let height = size.height.isFinite ? max(0, size.height) : 0
-        let segmentWidth = max(0, width * progress + height)
-
         Rectangle()
-            .frame(width: segmentWidth)
-            .offset(x: -height)
+            .frame(width: size.width * progress + size.height)
+            .offset(x: -size.height)
     }
 
     private func tickOffset(for progress: Double, in width: CGFloat) -> CGFloat {
-        guard progress.isFinite, width.isFinite, width > 0 else { return 0 }
-        return clamp(width * progress - tickWidth / 2, min: 0, max: max(0, width - tickWidth))
+        clamp(width * progress - tickWidth / 2, min: 0, max: width - tickWidth)
     }
 
     var body: some View {
@@ -151,10 +143,12 @@ private struct VideoPlayerSliderContent: SliderContentView {
                         .foregroundStyle(activeColor.opacity(0.45))
                 }
 
-                if sliderState.isFocused {
-                    progressSegment(progress: committedProgress, in: proxy.size)
-                        .foregroundStyle(activeColor)
-                }
+                // Always draw the played (left) portion — even when unfocused — so the bar reads as a real
+                // progress bar instead of collapsing to an empty track (the whole bar already dims to 0.7
+                // opacity when unfocused via the modifier below, so this shows as a dimmed fill). Previously
+                // this was gated on `isFocused`, which is why the left side lost its color on navigating away.
+                progressSegment(progress: committedProgress, in: proxy.size)
+                    .foregroundStyle(activeColor)
 
                 if let visibleTickProgress {
                     Rectangle()
@@ -165,8 +159,8 @@ private struct VideoPlayerSliderContent: SliderContentView {
             }
             .clipShape(Capsule())
         }
-        .onChange(of: sliderState.isFocused) {
-            if !sliderState.isFocused {
+        .onChange(of: sliderState.isFocused) { _, focused in
+            if !focused {
                 containerState.cancelScrub()
             }
         }

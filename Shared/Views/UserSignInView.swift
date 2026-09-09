@@ -8,8 +8,9 @@
 
 import CollectionVGrid
 import Defaults
-import FactoryKit
+import Factory
 import JellyfinAPI
+import Logging
 import SwiftUI
 
 struct UserSignInView: View {
@@ -21,9 +22,6 @@ struct UserSignInView: View {
 
     @Environment(\.localUserAuthenticationAction)
     private var authenticationAction
-
-    @Injected(\.userSessionManager)
-    private var userSessionManager: UserSessionManager
 
     @FocusState
     private var focusedTextField: Field?
@@ -47,6 +45,8 @@ struct UserSignInView: View {
     @StateObject
     private var viewModel: UserSignInViewModel
 
+    private let logger = Logger.swiftfin()
+
     init(server: ServerState) {
         self._viewModel = StateObject(wrappedValue: UserSignInViewModel(server: server))
     }
@@ -54,8 +54,9 @@ struct UserSignInView: View {
     private func handleEvent(_ event: UserSignInViewModel._Event) {
         switch event {
         case let .connected(user):
-            guard let authenticationAction else { return }
-
+            guard let authenticationAction else {
+                return
+            }
             viewModel.save(
                 user: user,
                 authenticationAction: (
@@ -71,15 +72,10 @@ struct UserSignInView: View {
             self.existingUser = existingUser
             self.isPresentingExistingUser = true
         case let .saved(user):
-            Task { @MainActor in
-                do {
-                    try await userSessionManager.signIn(userID: user.id)
-                    UIDevice.feedback(.success)
-                    router.dismiss()
-                } catch {
-                    await viewModel.error(error)
-                }
-            }
+            UIDevice.feedback(.success)
+
+            router.dismiss()
+            Container.shared.userSessionManager().signIn(userID: user.id)
         }
     }
 
@@ -94,18 +90,6 @@ struct UserSignInView: View {
         }
 
         return evaluatedPolicy
-    }
-
-    @ViewBuilder
-    private func disclaimerText(_ disclaimer: String) -> some View {
-        if let attributedString = try? AttributedString(
-            markdown: disclaimer,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        ) {
-            Text(attributedString)
-        } else {
-            Text(disclaimer)
-        }
     }
 
     // MARK: - Sign In Section
@@ -126,7 +110,8 @@ struct UserSignInView: View {
                 L10n.password,
                 text: $password,
                 maskToggle: .enabled
-            ) {
+            )
+            .onSubmit {
                 focusedTextField = nil
 
                 viewModel.signIn(
@@ -154,51 +139,31 @@ struct UserSignInView: View {
         }
 
         if case .signingIn = viewModel.state {
-            Button(role: .cancel) {
+            Button(L10n.cancel, role: .cancel) {
                 viewModel.cancel()
-            } label: {
-                Text(L10n.cancel)
-                    .frame(maxWidth: .infinity)
             }
-            .listRowInsets(.zero)
-            .listRowBackground(Color.clear)
-            .fontWeight(.semibold)
-            .backport
-            .buttonStyle(.glassProminent.shadow(false))
-            #if os(iOS)
-            .controlSize(.large)
-            #endif
-            #if os(iOS)
-            .listRowSeparator(.hidden)
-            #endif
+            .buttonStyle(.primary)
             .frame(maxHeight: 75)
         } else {
-            Button {
+            Button(L10n.signIn) {
                 viewModel.signIn(
                     username: username,
                     password: password
                 )
-            } label: {
-                Text(L10n.signIn)
-                    .frame(maxWidth: .infinity)
             }
-            .listRowInsets(.zero)
-            .listRowBackground(Color.clear)
-            .fontWeight(.semibold)
-            .backport
-            .buttonStyle(.glassProminent.shadow(false))
-            .tint(.jellyfinPurple)
-            #if os(iOS)
-            .controlSize(.large)
-            .listRowSeparator(.hidden)
-            #endif
+            .buttonStyle(.primary)
             .frame(maxHeight: 75)
             .disabled(username.isEmpty)
+            .foregroundStyle(
+                Color.jellyfinPurple.overlayColor,
+                Color.jellyfinPurple
+            )
+            .opacity(username.isEmpty ? 0.5 : 1)
         }
 
         if viewModel.isQuickConnectEnabled {
             Section {
-                Button {
+                Button(L10n.quickConnect) {
                     router.route(
                         to: .quickConnect(
                             client: viewModel.server.client
@@ -206,29 +171,20 @@ struct UserSignInView: View {
                             await viewModel.signInQuickConnect(secret: secret)
                         }
                     )
-                } label: {
-                    Text(L10n.quickConnect)
-                        .frame(maxWidth: .infinity)
                 }
-                .listRowInsets(.zero)
-                .listRowBackground(Color.clear)
-                .fontWeight(.semibold)
-                .backport
-                .buttonStyle(.glassProminent.shadow(false))
-                .tint(.jellyfinPurple)
-                #if os(iOS)
-                .controlSize(.large)
-                #endif
-                #if os(iOS)
-                .listRowSeparator(.hidden)
-                #endif
+                .buttonStyle(.primary)
+                .frame(maxHeight: 75)
                 .disabled(viewModel.state == .signingIn)
+                .foregroundStyle(
+                    Color.jellyfinPurple.overlayColor,
+                    Color.jellyfinPurple
+                )
             }
         }
 
         if let disclaimer = viewModel.serverDisclaimer {
             Section(L10n.disclaimer) {
-                disclaimerText(disclaimer)
+                Text(disclaimer)
                     .font(.callout)
             }
         }
@@ -298,7 +254,7 @@ struct UserSignInView: View {
             signInSection
             publicUsersSection
         }
-        .toolbarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.inline)
         .navigationBarCloseButton(disabled: viewModel.state == .signingIn) {
             router.dismiss()
         }

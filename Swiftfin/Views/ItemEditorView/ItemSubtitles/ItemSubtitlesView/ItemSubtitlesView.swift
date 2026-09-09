@@ -58,6 +58,7 @@ struct ItemSubtitlesView: View {
         }
         .navigationTitle(L10n.subtitles)
         .navigationBarBackButtonHidden(isEditing)
+        .backport
         .toolbarTitleDisplayMode(.inline)
         .errorMessage($viewModel.error)
         .if(!isEditing) { view in
@@ -72,46 +73,26 @@ struct ItemSubtitlesView: View {
                     Button(isAllSelected ? L10n.removeAll : L10n.selectAll) {
                         toggleAllSelection()
                     }
-                    .foregroundStyle(.primary, .secondary)
-                    .if(true) { view in
-                        if #available(iOS 26.0, *) {
-                            view
-                        } else {
-                            view
-                                .backport
-                                .buttonStyle(.glass)
-                        }
-                    }
-                    .controlSize(.small)
+                    .buttonStyle(.toolbarPill)
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
                 if isEditing {
-                    Button(L10n.cancel, role: .cancel) {
+                    Button(L10n.cancel) {
                         isEditing = false
                         selectedSubtitles.removeAll()
                     }
-                    .foregroundStyle(.primary, .secondary)
-                    .if(true) { view in
-                        if #available(iOS 26.0, *) {
-                            view
-                        } else {
-                            view
-                                .backport
-                                .buttonStyle(.glass)
-                        }
-                    }
-                    .controlSize(.small)
+                    .buttonStyle(.toolbarPill)
                 }
             }
             ToolbarItem(placement: .bottomBar) {
                 if isEditing {
-                    Button(L10n.delete, role: .destructive) {
+                    Button(L10n.delete) {
                         isPresentingDeleteConfirmation = true
                     }
-                    .backport
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(.toolbarPill(.red))
                     .disabled(selectedSubtitles.isEmpty)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
         }

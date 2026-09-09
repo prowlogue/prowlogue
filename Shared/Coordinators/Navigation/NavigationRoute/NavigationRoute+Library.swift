@@ -23,27 +23,19 @@ extension NavigationRoute {
         }
     }
 
-    @MainActor
-    static func contentGroup(
-        provider: some ContentGroupProvider
+    static func library(
+        viewModel: PagingLibraryViewModel<some Poster>
     ) -> NavigationRoute {
         NavigationRoute(
-            id: "content-group-\(provider.id)",
+            id: "library-(\(viewModel.parent?.id ?? "Unparented"))",
             withNamespace: { .push(.zoom(sourceID: "item", namespace: $0)) }
         ) {
-            ContentGroupView(provider: provider)
-        }
-    }
-
-    @MainActor
-    static func library<Library: PagingLibrary>(
-        library: Library
-    ) -> NavigationRoute where Library.Element: LibraryElement {
-        NavigationRoute(
-            id: "library-\(library.parent.pagingLibraryID)",
-            withNamespace: { .push(.zoom(sourceID: "item", namespace: $0)) }
-        ) {
-            PagingLibraryView(library: library)
+            // tvOS landing page (revert this one line): `PagingLibraryView`. iOS keeps its own view.
+            #if os(tvOS)
+            NativePagingLibraryView(viewModel: viewModel)
+            #else
+            PagingLibraryView(viewModel: viewModel)
+            #endif
         }
     }
 }

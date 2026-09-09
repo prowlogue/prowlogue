@@ -10,7 +10,7 @@ import SwiftUI
 
 /// An empty `UIView` for the general purpose of
 /// being a hit target.
-struct EmptyHitTestView: PlatformViewRepresentable {
+struct EmptyHitTestView: UIViewRepresentable {
     func makeUIView(context: Context) -> UIView {
         UIView()
     }

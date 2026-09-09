@@ -14,29 +14,26 @@ import SwiftUI
 
 struct ListTitleSection: View {
 
-    private let description: Text?
-    private let learnMoreAction: (() -> Void)?
-    private let title: Text
+    private let title: String
+    private let description: String?
+    private let onLearnMore: (() -> Void)?
 
     var body: some View {
         Section {
             VStack(alignment: .center, spacing: 10) {
 
-                title
+                Text(title)
                     .font(.title3)
                     .fontWeight(.semibold)
                     .multilineTextAlignment(.center)
 
                 if let description {
-                    description
+                    Text(description)
                         .multilineTextAlignment(.center)
                 }
 
-                if let learnMoreAction {
-                    Button(
-                        L10n.learnMore + .ellipsis,
-                        action: learnMoreAction
-                    )
+                if let onLearnMore {
+                    Button(L10n.learnMore + .ellipsis, action: onLearnMore)
                 }
             }
             .font(.subheadline)
@@ -48,25 +45,25 @@ struct ListTitleSection: View {
 extension ListTitleSection {
 
     init(
-        _ title: some WithText,
-        description: (some WithText)? = nil
+        _ title: String,
+        description: String? = nil
     ) {
         self.init(
-            description: description?.textBody,
-            learnMoreAction: nil,
-            title: title.textBody
+            title: title,
+            description: description,
+            onLearnMore: nil
         )
     }
 
     init(
-        _ title: some WithText,
-        description: (some WithText)? = nil,
-        learnMoreAction: @escaping () -> Void
+        _ title: String,
+        description: String? = nil,
+        onLearnMore: @escaping () -> Void
     ) {
         self.init(
-            description: description?.textBody,
-            learnMoreAction: learnMoreAction,
-            title: title.textBody
+            title: title,
+            description: description,
+            onLearnMore: onLearnMore
         )
     }
 }
@@ -78,15 +75,15 @@ struct InsetGroupedListHeader<Content: View>: View {
     @Default(.accentColor)
     private var accentColor
 
-    private let content: Content
-    private let description: Text?
-    private let learnMoreAction: (() -> Void)?
+    private let content: () -> Content
     private let title: Text?
+    private let description: Text?
+    private let onLearnMore: (() -> Void)?
 
     @ViewBuilder
     private var header: some View {
         Button {
-            learnMoreAction?()
+            onLearnMore?()
         } label: {
             VStack(alignment: .center, spacing: 10) {
 
@@ -101,7 +98,7 @@ struct InsetGroupedListHeader<Content: View>: View {
                         .multilineTextAlignment(.center)
                 }
 
-                if learnMoreAction != nil {
+                if onLearnMore != nil {
                     Text(L10n.learnMore + .ellipsis)
                         .foregroundStyle(accentColor)
                 }
@@ -125,7 +122,7 @@ struct InsetGroupedListHeader<Content: View>: View {
                     header
                 }
 
-                content
+                content()
                     .listRowSeparator(.hidden)
                     .padding(.init(vertical: 5, horizontal: 20))
                     .listRowInsets(.init(vertical: 10, horizontal: 20))
@@ -137,16 +134,30 @@ struct InsetGroupedListHeader<Content: View>: View {
 extension InsetGroupedListHeader {
 
     init(
-        _ title: some WithText,
-        description: (some WithText)? = nil,
-        learnMoreAction: (() -> Void)? = nil,
+        _ title: String? = nil,
+        description: String? = nil,
+        onLearnMore: (() -> Void)? = nil,
         @ViewBuilder content: @escaping () -> Content
     ) {
         self.init(
-            content: content(),
-            description: description?.textBody,
-            learnMoreAction: learnMoreAction,
-            title: title.textBody
+            content: content,
+            title: title == nil ? nil : Text(title!),
+            description: description == nil ? nil : Text(description!),
+            onLearnMore: onLearnMore
+        )
+    }
+
+    init(
+        title: Text,
+        description: Text? = nil,
+        onLearnMore: (() -> Void)? = nil,
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.init(
+            content: content,
+            title: title,
+            description: description,
+            onLearnMore: onLearnMore
         )
     }
 }
@@ -154,15 +165,28 @@ extension InsetGroupedListHeader {
 extension InsetGroupedListHeader where Content == EmptyView {
 
     init(
-        _ title: some WithText,
-        description: (some WithText)? = nil,
-        learnMoreAction: (() -> Void)? = nil
+        _ title: String,
+        description: String? = nil,
+        onLearnMore: (() -> Void)? = nil
     ) {
         self.init(
-            content: EmptyView(),
-            description: description?.textBody,
-            learnMoreAction: learnMoreAction,
-            title: title.textBody
+            content: { EmptyView() },
+            title: Text(title),
+            description: description == nil ? nil : Text(description!),
+            onLearnMore: onLearnMore
+        )
+    }
+
+    init(
+        title: Text,
+        description: Text? = nil,
+        onLearnMore: (() -> Void)? = nil
+    ) {
+        self.init(
+            content: { EmptyView() },
+            title: title,
+            description: description,
+            onLearnMore: onLearnMore
         )
     }
 }

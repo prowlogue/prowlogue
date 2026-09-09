@@ -19,7 +19,7 @@ struct ItemRefreshView: View {
     private var accentColor
 
     @ObservedObject
-    var viewModel: ItemEditorViewModel
+    var viewModel: ItemEditorViewModel<BaseItemDto>
 
     @State
     private var refreshType: MetadataRefreshType = .scan
@@ -54,12 +54,10 @@ struct ItemRefreshView: View {
         }
         .errorMessage($viewModel.error)
         #if os(iOS)
-        .topBarTrailing {
-            Button(L10n.run, action: onRun)
-                .backport
-                .buttonStyle(.glassProminent)
-                .controlSize(.small)
-        }
+            .topBarTrailing {
+                Button(L10n.run, action: onRun)
+                    .buttonStyle(.toolbarPill)
+            }
         #endif
     }
 
@@ -87,19 +85,9 @@ struct ItemRefreshView: View {
 
             #if os(tvOS)
             Section {
-                Button(action: onRun) {
-                    Text(L10n.run)
-                        .frame(maxWidth: .infinity)
-                }
-                .listRowInsets(.zero)
-                .listRowBackground(Color.clear)
-                .fontWeight(.semibold)
-                .backport
-                .buttonStyle(.glassProminent.shadow(false))
-                .tint(accentColor)
-                #if os(iOS)
-                .controlSize(.large)
-                #endif
+                Button(L10n.run, action: onRun)
+                    .buttonStyle(.primary)
+                    .foregroundStyle(accentColor.overlayColor, accentColor)
             }
             #endif
         }

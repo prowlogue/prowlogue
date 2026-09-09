@@ -7,7 +7,7 @@
 //
 
 import Defaults
-import FactoryKit
+import Factory
 import JellyfinAPI
 import SwiftUI
 
@@ -18,11 +18,6 @@ struct VideoPlayerSettingsView: View {
     #else
     typealias PlatformPicker = Picker
     #endif
-
-    // MARK: - Player Defaults
-
-    @Default(.VideoPlayer.videoPlayerType)
-    private var videoPlayerType
 
     // MARK: - Button Defaults
 
@@ -54,10 +49,12 @@ struct VideoPlayerSettingsView: View {
 
     // MARK: - Subtitle Defaults
 
-    @Default(.VideoPlayer.Subtitle.configuration)
-    private var subtitleConfiguration
-    @StoredValue(.User.forceSubtitleBurnIn)
-    private var forceSubtitleBurnIn
+    @Default(.VideoPlayer.Subtitle.subtitleFontName)
+    private var subtitleFontName
+    @Default(.VideoPlayer.Subtitle.subtitleSize)
+    private var subtitleSize
+    @Default(.VideoPlayer.Subtitle.subtitleColor)
+    private var subtitleColor
 
     // MARK: - Timestamp Defaults
 
@@ -86,8 +83,6 @@ struct VideoPlayerSettingsView: View {
 
     var body: some View {
         Form(systemImage: "tv") {
-            engineSettings
-
             #if os(iOS)
             gestureSettings
             #endif
@@ -109,49 +104,13 @@ struct VideoPlayerSettingsView: View {
         .onFirstAppear {
             viewModel.refresh()
         }
+        .backport
         .toolbarTitleDisplayMode(.inline)
         .navigationTitle(L10n.videoPlayer.localizedCapitalized)
         .topBarTrailing {
             if viewModel.background.is(.updating) || viewModel.background.is(.refreshing) {
                 ProgressView()
             }
-        }
-    }
-
-    // MARK: - Engine Settings
-
-    @ViewBuilder
-    private var videoPlayerPicker: some View {
-        Picker(L10n.player, selection: $videoPlayerType) {
-            ForEach(VideoPlayerType.supportedCases, id: \.self) { player in
-                Text(player.displayTitle).tag(player)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var engineSettings: some View {
-        Section(L10n.playback) {
-            #if os(iOS)
-            videoPlayerPicker
-            #else
-            ListRowMenu(L10n.player, subtitle: videoPlayerType.displayTitle) {
-                videoPlayerPicker
-            }
-            #endif
-
-            ChevronButton(L10n.playbackQuality) {
-                router.route(to: .playbackQualitySettings)
-            }
-        } learnMore: {
-            LabeledContent(
-                L10n.vlc,
-                value: L10n.playerVlcDescription
-            )
-            LabeledContent(
-                L10n.native,
-                value: L10n.playerNativeDescription
-            )
         }
     }
 
@@ -195,12 +154,14 @@ struct VideoPlayerSettingsView: View {
                 ))
             }
         }
-        .onChange(of: barActionButtons) {
-            let enabled = barActionButtons.contains(.autoPlay) || menuActionButtons.contains(.autoPlay)
+        .backport
+        .onChange(of: barActionButtons) { _, newValue in
+            let enabled = newValue.contains(.autoPlay) || menuActionButtons.contains(.autoPlay)
             updateConfiguration { $0.enableNextEpisodeAutoPlay = enabled }
         }
-        .onChange(of: menuActionButtons) {
-            let enabled = menuActionButtons.contains(.autoPlay) || barActionButtons.contains(.autoPlay)
+        .backport
+        .onChange(of: menuActionButtons) { _, newValue in
+            let enabled = newValue.contains(.autoPlay) || barActionButtons.contains(.autoPlay)
             updateConfiguration { $0.enableNextEpisodeAutoPlay = enabled }
         }
     }
@@ -326,13 +287,6 @@ struct VideoPlayerSettingsView: View {
                     updateConfiguration { $0.isRememberSubtitleSelections = newValue }
                 }
             ))
-
-            Toggle(
-                L10n.forceSubtitleBurnIn,
-                isOn: $forceSubtitleBurnIn
-            )
-        } footer: {
-            Text(L10n.forceSubtitleBurnInMessage)
         } learnMore: {
             LabeledContent(
                 SubtitlePlaybackMode.default.displayTitle,
@@ -361,18 +315,18 @@ struct VideoPlayerSettingsView: View {
         }
 
         Section {
-            ChevronButton(L10n.subtitleFont, content: subtitleConfiguration.fontName) {
-                router.route(to: .fontPicker(selection: $subtitleConfiguration.fontName))
+            ChevronButton(L10n.subtitleFont, content: subtitleFontName) {
+                router.route(to: .fontPicker(selection: $subtitleFontName))
             }
 
-            Stepper(L10n.subtitleSize, value: $subtitleConfiguration.size, in: 1 ... 20, step: 1) {
+            Stepper(L10n.subtitleSize, value: $subtitleSize, in: 1 ... 20, step: 1) {
                 LabeledContent(L10n.subtitleSize) {
-                    Text(subtitleConfiguration.size.description)
+                    Text(subtitleSize.description)
                         .foregroundStyle(.secondary)
                 }
             }
 
-            ColorPicker(L10n.subtitleColor, selection: $subtitleConfiguration.color, supportsOpacity: false)
+            ColorPicker(L10n.subtitleColor, selection: $subtitleColor, supportsOpacity: false)
         } footer: {
             // TODO: better wording
             Text(L10n.subtitlesDisclaimer)

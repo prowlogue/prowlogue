@@ -7,7 +7,7 @@
 //
 
 import Defaults
-import FactoryKit
+import Factory
 import Foundation
 import JellyfinAPI
 
@@ -49,7 +49,7 @@ extension StoredValues.Keys {
 
         static var servers: Key<[ServerState]> {
             ServerKey(
-                ownerID: "swiftfinApp",
+                ownerID: "prowlogueApp",
                 field: "servers",
                 storage: .sql,
                 default: []

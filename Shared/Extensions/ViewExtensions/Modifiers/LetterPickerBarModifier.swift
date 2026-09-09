@@ -26,14 +26,17 @@ struct LetterPickerBarModifier: ViewModifier {
                 .ignoresSafeArea(.all, edges: edge == .leading ? .trailing : .leading)
                 .safeAreaInset(edge: edge, alignment: .center, spacing: 0) {
                     LetterPickerBar(viewModel: viewModel)
-                }
-                .overlayPreferenceValue(LetterPickerActiveLetterKey.self) { letter in
-                    ZStack {
-                        if let letter {
-                            LetterPickerBar.LetterPickerCallout(letter: letter)
-                                .font(.system(size: UIDevice.isTV ? 128 : 64, design: .rounded).weight(.bold))
+                        .if(!UIDevice.isTV) { view in
+                            view
+                                .padding(.vertical, EdgeInsets.edgePadding / 2)
+                                .padding(edge == .leading ? .leading : .trailing, EdgeInsets.edgePadding / 2)
                         }
-                    }
+                        .if(UIDevice.isTV) { view in
+                            view
+                                .offset(x: edge == .leading ? -EdgeInsets.edgePadding / 1.5 : EdgeInsets.edgePadding / 1.5)
+                                .padding(edge == .leading ? .trailing : .leading, -EdgeInsets.edgePadding / 2)
+                                .focusSection()
+                        }
                 }
         } else {
             content

@@ -7,6 +7,7 @@
 //
 
 import Combine
+import Engine
 import JellyfinAPI
 import SwiftUI
 
@@ -41,7 +42,7 @@ extension EditMetadataView {
                             format: .number
                         )
                         .keyboardType(.decimalPad)
-                        .onChange(of: item.criticRating) {
+                        .onChange(of: item.criticRating) { _ in
                             if let rating = item.criticRating {
                                 item.criticRating = min(max(rating, 0), 100)
                             }
@@ -70,7 +71,7 @@ extension EditMetadataView {
                             format: .number
                         )
                         .keyboardType(.decimalPad)
-                        .onChange(of: item.communityRating) {
+                        .onChange(of: item.communityRating) { _ in
                             if let rating = item.communityRating {
                                 item.communityRating = min(max(rating, 0), 10)
                             }

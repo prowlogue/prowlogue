@@ -10,8 +10,8 @@ import Foundation
 
 class Fastfile: LaneFile {
     
-    private let bundleIdentifier = "org.jellyfin.swiftfin"
-    private let xcodeProject = "Swiftfin.xcodeproj"
+    private let swiftfinBundleIdentifier = "org.jellyfin.swiftfin"
+    private let prowlogueXcodeProject = "Prowlogue.xcodeproj"
     
     // MARK: - Version
     
@@ -105,9 +105,6 @@ class Fastfile: LaneFile {
               let profileName64 = requiredOptions["profileName64"] else {
             fail("internal validation error")
         }
-
-        let sdk = sdk(forScheme: scheme)
-        let appPlatform = appPlatform(forSDK: sdk)
         
         guard let decodedCodeSignIdentity = decodeBase64(encoded: codeSign64) else {
             fail("code sign identity not valid base 64")
@@ -131,40 +128,33 @@ class Fastfile: LaneFile {
         )
         
         updateCodeSigningSettings(
-            path: xcodeProject,
+            path: prowlogueXcodeProject,
             useAutomaticSigning: false,
             codeSignIdentity: .userDefined(decodedCodeSignIdentity),
             profileName: .userDefined(profileName),
-            bundleIdentifier: .userDefined(bundleIdentifier)
+            bundleIdentifier: .userDefined(swiftfinBundleIdentifier)
         )
-        
-        let resolvedVersion: String
 
         if let providedVersion = options["version"]?.trimOption() {
             guard let version = Version(string: providedVersion) else {
                 fail("invalid provided version '\(providedVersion)'")
             }
             
-            resolvedVersion = providedVersion
-            
             incrementVersionNumber(
-                versionNumber: .userDefined(version.description),
-                xcodeproj: .userDefined(xcodeProject)
+                versionNumber: .userDefined(version.description)
             )
         } else {
             
             appStoreBuildNumber(
                 initialBuildNumber: "1",
-                appIdentifier: bundleIdentifier,
-                live: .userDefined(true),
-                platform: appPlatform
+                appIdentifier: swiftfinBundleIdentifier,
+                live: .userDefined(true)
             )
 
             let liveVersion: String? = laneContextValue(for: "LATEST_VERSION")
             
             latestTestflightBuildNumber(
-                appIdentifier: bundleIdentifier,
-                platform: appPlatform,
+                appIdentifier: swiftfinBundleIdentifier,
                 initialBuildNumber: 1
             )
             
@@ -182,45 +172,29 @@ class Fastfile: LaneFile {
                 version.bump(.minor)
             }
             
-            resolvedVersion = version.description
-            
             incrementVersionNumber(
-                versionNumber: .userDefined(version.description),
-                xcodeproj: .userDefined(xcodeProject)
+                versionNumber: .userDefined(version.description)
             )
         }
-        
-        let resolvedBuild: String
 
         if let build = options["build"]?.trimOption() {
-            resolvedBuild = build
-            
             incrementBuildNumber(
                 buildNumber: .userDefined(build),
-                xcodeproj: .userDefined(xcodeProject)
+                xcodeproj: .userDefined(prowlogueXcodeProject)
             )
         } else {
             let testFlightBuild: Int = laneContextValue(for: "LATEST_TESTFLIGHT_BUILD_NUMBER") ?? 0
-            resolvedBuild = "\(testFlightBuild)"
 
             incrementBuildNumber(
                 buildNumber: .userDefined("\(testFlightBuild + 1)"),
-                xcodeproj: .userDefined(xcodeProject)
             )
         }
 
-        let outputDirectory = "fastlane/build/\(sanitizedName(for: scheme))"
-        try? FileManager.default.removeItem(atPath: outputDirectory)
-
         buildApp(
             scheme: .userDefined(scheme),
-            outputDirectory: outputDirectory,
-            outputName: .userDefined("\(sanitizedName(for: scheme)).ipa"),
             skipArchive: .userDefined(false),
-            sdk: .userDefined(sdk),
             xcargs: .userDefined("-skipMacroValidation"),
-            skipProfileDetection: false,
-            disablePackageAutomaticUpdates: true
+            skipProfileDetection: false
         )
 
         var changelog: String?
@@ -230,19 +204,13 @@ class Fastfile: LaneFile {
                 .trimOption()
         }
         
-        let ipa = "\(outputDirectory)/\(sanitizedName(for: scheme)).ipa"
-        guard FileManager.default.fileExists(atPath: ipa) else {
+        guard let ipa = sh(command: "find . -name '*.ipa' -print -quit").trimOption() else {
             fail("couldn't find ipa file")
         }
-        
-        puts(message: "Uploading \(scheme) \(resolvedVersion) (\(resolvedBuild))")
 
         uploadToTestflight(
-            appPlatform: .userDefined(appPlatform),
             ipa: .userDefined(ipa),
-            changelog: .userDefined(changelog),
-            appVersion: .userDefined(resolvedVersion),
-            buildNumber: .userDefined(resolvedBuild)
+            changelog: .userDefined(changelog)
         )
     }
     
@@ -304,33 +272,6 @@ class Fastfile: LaneFile {
         }
         
         return (validatedOptions, missingKeys)
-    }
-
-    private func sdk(forScheme scheme: String) -> String {
-        if scheme.localizedCaseInsensitiveContains("tvos") {
-            return "appletvos"
-        }
-
-        return "iphoneos"
-    }
-
-    private func appPlatform(forSDK sdk: String) -> String {
-        let normalizedSDK = sdk.lowercased()
-
-        if normalizedSDK.contains("appletv") || normalizedSDK.contains("tvos") {
-            return "appletvos"
-        }
-
-        return "ios"
-    }
-
-    private func sanitizedName(for scheme: String) -> String {
-        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
-        let sanitizedScalars = scheme.unicodeScalars.map { scalar in
-            allowed.contains(scalar) ? Character(scalar) : "-"
-        }
-
-        return String(sanitizedScalars)
     }
 }
 

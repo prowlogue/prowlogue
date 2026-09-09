@@ -13,9 +13,21 @@ import SwiftUI
 
 extension View {
 
+    func detectOrientation(_ orientation: Binding<UIDeviceOrientation>) -> some View {
+        modifier(DetectOrientation(orientation: orientation))
+    }
+
     /// - Important: This does nothing on iOS.
     func focusSection() -> some View {
         self
+    }
+
+    func navigationBarOffset(_ scrollViewOffset: Binding<CGFloat>, start: CGFloat, end: CGFloat) -> some View {
+        modifier(NavigationBarOffsetModifier(scrollViewOffset: scrollViewOffset, start: start, end: end))
+    }
+
+    func navigationBarDrawer(@ViewBuilder _ drawer: @escaping () -> some View) -> some View {
+        modifier(NavigationBarDrawerModifier(drawer: drawer))
     }
 
     @ViewBuilder
@@ -23,12 +35,16 @@ extension View {
         viewModel: FilterViewModel,
         types: [ItemFilterType]
     ) -> some View {
-        modifier(
-            NavigationBarFilterDrawerModifier(
-                viewModel: viewModel,
-                types: types
-            )
-        )
+        if types.isEmpty {
+            self
+        } else {
+            navigationBarDrawer {
+                NavigationBarFilterDrawer(
+                    viewModel: viewModel,
+                    types: types
+                )
+            }
+        }
     }
 
     @ViewBuilder
@@ -55,14 +71,14 @@ extension View {
             NavigationBarMenuButtonModifier(
                 isLoading: isLoading,
                 isHidden: isHidden,
-                menuContent: items
+                items: items
             )
         )
     }
 
     @ViewBuilder
     func listRowCornerRadius(_ radius: CGFloat) -> some View {
-        introspect(.listCell, on: .iOS(.v18...)) { cell in
+        introspect(.listCell, on: .iOS(.v16...)) { cell in
             if #available(iOS 26, *) {
                 cell.cornerConfiguration = .uniformCorners(radius: .fixed(radius))
             } else {

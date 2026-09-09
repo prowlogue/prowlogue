@@ -7,7 +7,7 @@
 //
 
 import Defaults
-import FactoryKit
+import Factory
 import JellyfinAPI
 import SwiftUI
 
@@ -61,7 +61,7 @@ extension DevicesView {
                 }
             }
             .posterStyle(.square)
-            .subtleShadow()
+            .posterShadow()
             .frame(width: 60, height: 60)
         }
 
@@ -112,6 +112,7 @@ extension DevicesView {
             } action: {
                 action()
             }
+            .isSeparatorVisible(false)
             .swipeActions {
                 if let onDelete {
                     Button(

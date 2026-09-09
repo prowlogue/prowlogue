@@ -13,10 +13,30 @@ extension ServerActivityView {
 
     struct LogEntry: View {
 
+        // MARK: - Activity Log Entry Variable
+
         @StateObject
         var viewModel: ServerActivityDetailViewModel
 
+        // MARK: - Action Variable
+
         let action: () -> Void
+
+        // MARK: - Body
+
+        var body: some View {
+            ListRow {
+                userImage
+                    .frame(width: 60, height: 60)
+            } content: {
+                rowContent
+                    .padding(.bottom, 8)
+            } action: {
+                action()
+            }
+        }
+
+        // MARK: - User Image
 
         @ViewBuilder
         private var userImage: some View {
@@ -45,10 +65,13 @@ extension ServerActivityView {
             }
         }
 
+        // MARK: - User Image
+
         @ViewBuilder
         private var rowContent: some View {
             HStack {
                 VStack(alignment: .leading) {
+                    /// Event Severity & Username / System
                     HStack(spacing: 8) {
                         Image(systemName: viewModel.log.severity?.systemImage ?? "questionmark.circle")
                             .foregroundStyle(viewModel.log.severity?.color ?? .gray)
@@ -61,6 +84,7 @@ extension ServerActivityView {
                     }
                     .font(.headline)
 
+                    /// Event Name
                     Text(viewModel.log.name ?? .emptyDash)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -86,19 +110,6 @@ extension ServerActivityView {
                     .font(.body.weight(.regular))
                     .foregroundStyle(.secondary)
             }
-        }
-
-        var body: some View {
-            ListRow {
-                userImage
-                    .frame(width: 60, height: 60)
-            } content: {
-                rowContent
-                    .padding(.bottom, 8)
-            } action: {
-                action()
-            }
-            .withViewContext(.isListRowSeparatorVisible)
         }
     }
 }

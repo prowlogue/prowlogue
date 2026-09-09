@@ -16,39 +16,148 @@ struct Backport<Content> {
 extension Backport where Content: View {
 
     @ViewBuilder
-    func buttonStyle(
-        _ style: some BackportButtonStyle
-    ) -> some View {
-        content.buttonStyle(
-            BackportPrimitiveButtonStyle(style: style)
-        )
+    func buttonBorderShape(_ shape: ButtonBorderShape) -> some View {
+        content.buttonBorderShape(shape.swiftUIValue)
     }
 
     @ViewBuilder
-    func glassEffect(
-        _ glass: BackportGlass = .regular,
-        in shape: some Shape
-    ) -> some View {
-        content.modifier(
-            BackportGlassEffectModifier(
-                glass: glass,
-                shape: shape
-            )
-        )
+    func toolbarTitleDisplayMode(_ mode: ToolbarTitleDisplayMode) -> some View {
+        if #available(iOS 17, tvOS 17, *) {
+            content.toolbarTitleDisplayMode(mode.swiftUIValue)
+        } else {
+            content.navigationBarTitleDisplayMode(mode.navigationBarTitleDisplayMode)
+        }
     }
 
     @ViewBuilder
-    func scrollEdgeEffectStyle(
-        _ style: ScrollEdgeEffectStyle?,
-        for edges: Edge.Set
-    ) -> some View {
-        if #available(iOS 26.0, *) {
-            content.scrollEdgeEffectStyle(
-                style?.swiftUIValue,
-                for: edges
+    func matchedTransitionSource(id: String, in namespace: Namespace.ID) -> some View {
+        if #available(iOS 18.0, tvOS 18.0, *) {
+            content.matchedTransitionSource(
+                id: id,
+                in: namespace
             )
         } else {
             content
         }
     }
+
+    @ViewBuilder
+    func navigationTransition(_ style: NavigationTransition) -> some View {
+        if #available(iOS 18.0, tvOS 18.0, *), case let .zoom(sourceID, namespace) = style {
+            content.navigationTransition(
+                .zoom(sourceID: sourceID, in: namespace)
+            )
+        } else {
+            content
+        }
+    }
+
+    @ViewBuilder
+    func onChange<V: Equatable>(
+        of value: V,
+        _ action: @escaping (_ oldValue: V, _ newValue: V) -> Void
+    ) -> some View {
+        if #available(iOS 17, tvOS 17, *) {
+            content.onChange(of: value, action)
+        } else {
+            content.onChange(of: value) { [value] newValue in
+                action(value, newValue)
+            }
+        }
+    }
+
+    @ViewBuilder
+    func onChange(
+        of value: some Equatable,
+        _ action: @escaping () -> Void
+    ) -> some View {
+        if #available(iOS 17, tvOS 17, *) {
+            content.onChange(of: value, action)
+        } else {
+            content.onChange(of: value) { _ in
+                action()
+            }
+        }
+    }
+
+    @MainActor
+    @ViewBuilder
+    func scrollClipDisabled(_ disabled: Bool = true) -> some View {
+        if #available(iOS 17, tvOS 17, *) {
+            content.scrollClipDisabled(disabled)
+        } else {
+            content.introspect(.scrollView, on: .iOS(.v16), .tvOS(.v16)) { scrollView in
+                scrollView.clipsToBounds = !disabled
+            }
+        }
+    }
+
+    @ViewBuilder
+    func defaultFocus<V: Hashable>(
+        _ binding: FocusState<V>.Binding,
+        _ value: V,
+        priority: DefaultFocusEvaluationPriority = .automatic
+    )
+    -> some View {
+        if #available(iOS 17, tvOS 17, *) {
+            content
+                .defaultFocus(
+                    binding,
+                    value,
+                    priority: priority
+                )
+        } else {
+            content
+        }
+    }
+
+    @ViewBuilder
+    func focusable(_ isFocusable: Bool = true) -> some View {
+        if #available(iOS 17, tvOS 17, *) {
+            content
+                .focusable(isFocusable)
+        } else {
+            content
+        }
+    }
+
+    @available(tvOS, unavailable)
+    @ViewBuilder
+    func searchFocused(
+        _ isSearchFocused: FocusState<Bool>.Binding
+    ) -> some View {
+        if #available(iOS 18.0, *) {
+            content.searchFocused(isSearchFocused)
+        } else {
+            content
+        }
+    }
+}
+
+// MARK: ButtonBorderShape
+
+enum ButtonBorderShape {
+    case automatic
+    case capsule
+    case roundedRectangle
+    case circle
+
+    var swiftUIValue: SwiftUI.ButtonBorderShape {
+        switch self {
+        case .automatic: .automatic
+        case .capsule: .capsule
+        case .roundedRectangle: .roundedRectangle
+        case .circle:
+            if #available(iOS 17, *) {
+                .circle
+            } else {
+                .roundedRectangle
+            }
+        }
+    }
+}
+
+enum NavigationTransition: Hashable {
+    case automatic
+    case zoom(sourceID: String, namespace: Namespace.ID)
 }

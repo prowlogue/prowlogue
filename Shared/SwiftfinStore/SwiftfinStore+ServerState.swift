@@ -7,7 +7,7 @@
 //
 
 import CoreStore
-import FactoryKit
+import Factory
 import Foundation
 import JellyfinAPI
 import Pulse

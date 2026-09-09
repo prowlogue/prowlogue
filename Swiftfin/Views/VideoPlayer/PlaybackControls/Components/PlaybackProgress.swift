@@ -50,26 +50,19 @@ extension VideoPlayer.PlaybackControls {
             isScrubbing && (currentTranslation.y >= 60)
         }
 
-        private var insetSliderWidth: CGFloat {
-            guard sliderSize.width.isFinite else { return 0 }
-            return max(0, sliderSize.width - EdgeInsets.edgePadding * 2)
-        }
-
         private var previewXOffset: CGFloat {
-            guard sliderSize.width.isFinite, sliderSize.width > 0 else { return 0 }
-
             let videoWidth = 85 * videoSizeAspectRatio
             let p = (sliderSize.width * scrubbedProgress) - (videoWidth / 2)
-            return clamp(p, min: 0, max: max(0, sliderSize.width - videoWidth))
+            return clamp(p, min: 0, max: sliderSize.width - videoWidth)
+        }
+
+        private var progress: Double {
+            scrubbedSeconds / (manager.item.runtime ?? .seconds(1))
         }
 
         private var scrubbedProgress: Double {
             guard let runtime = manager.item.runtime, runtime > .zero else { return 0 }
-
-            let progress = scrubbedSeconds / runtime
-            guard progress.isFinite else { return 0 }
-
-            return clamp(progress, min: 0, max: 1)
+            return scrubbedSeconds / runtime
         }
 
         private var scrubbedSeconds: Duration {
@@ -81,25 +74,7 @@ extension VideoPlayer.PlaybackControls {
                 return 1.77
             }
 
-            let videoSize = videoPlayerProxy.videoSize.value
-            guard videoSize.width.isFinite,
-                  videoSize.height.isFinite,
-                  videoSize.width > 0,
-                  videoSize.height > 0
-            else {
-                return 1.77
-            }
-
-            let aspectRatio = videoSize.aspectRatio
-            guard aspectRatio.isFinite else { return 1.77 }
-
-            return clamp(aspectRatio, min: 0.25, max: 4)
-        }
-
-        private var sliderTotal: Double {
-            let total = (manager.item.runtime ?? .zero).seconds
-            guard total.isFinite, total > 0 else { return 1 }
-            return total
+            return clamp(videoPlayerProxy.videoSize.value.aspectRatio, min: 0.25, max: 4)
         }
 
         @ViewBuilder
@@ -134,14 +109,14 @@ extension VideoPlayer.PlaybackControls {
                     .trackingSize($sliderSize)
             } content: {
                 // Use scale effect, slider doesn't respond well to horizontal frame changes
-                let xScale = insetSliderWidth > 0 ? max(1, sliderSize.width / insetSliderWidth) : 1
+                let xScale = max(1, sliderSize.width / (sliderSize.width - EdgeInsets.edgePadding * 2))
 
                 CapsuleSlider(
                     value: $scrubbedSecondsBox.value.map(
                         getter: { $0.seconds },
                         setter: { .seconds($0) }
                     ),
-                    total: sliderTotal,
+                    total: max(1, (manager.item.runtime ?? .zero).seconds),
                     translation: $currentTranslation,
                     valueDamping: isSlowScrubbing ? 0.1 : 1
                 )
@@ -158,7 +133,7 @@ extension VideoPlayer.PlaybackControls {
                         }
                     }
                 }
-                .frame(maxWidth: sliderSize != .zero ? insetSliderWidth : .infinity)
+                .frame(maxWidth: sliderSize != .zero ? sliderSize.width - EdgeInsets.edgePadding * 2 : .infinity)
                 .scaleEffect(x: isScrubbing ? xScale : 1, y: 1, anchor: .center)
                 .frame(height: isScrubbing ? 20 : 10)
                 .foregroundStyle(manager.state == .loadingItem ? .gray : .primary)
@@ -180,7 +155,7 @@ extension VideoPlayer.PlaybackControls {
 
                     SplitTimeStamp()
                         .offset(y: isScrubbing ? 5 : 0)
-                        .frame(maxWidth: isScrubbing ? nil : insetSliderWidth)
+                        .frame(maxWidth: isScrubbing ? nil : max(0, sliderSize.width - EdgeInsets.edgePadding * 2))
                 }
             }
             .frame(maxWidth: .infinity)
@@ -202,7 +177,7 @@ extension VideoPlayer.PlaybackControls {
                         .transition(.opacity.animation(.linear(duration: 0.1)))
                 }
             }
-            .onChange(of: isSlowScrubbing) {
+            .onChange(of: isSlowScrubbing) { _ in
                 guard isScrubbing else { return }
                 UIDevice.impact(.soft)
             }

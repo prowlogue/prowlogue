@@ -43,13 +43,12 @@ struct ResetUserPasswordView: View {
     @State
     private var isPresentingSuccess: Bool = false
 
+    @State
+    private var error: Error? = nil
+
     init(userID: String, requiresCurrentPassword: Bool) {
         self._viewModel = StateObject(wrappedValue: ResetUserPasswordViewModel(userID: userID))
         self.requiresCurrentPassword = requiresCurrentPassword
-    }
-
-    private var isValid: Bool {
-        newPassword == confirmNewPassword
     }
 
     var body: some View {
@@ -93,7 +92,7 @@ struct ResetUserPasswordView: View {
                     maskToggle: .enabled
                 )
                 .onSubmit {
-                    viewModel.reset(current: currentPassword, new: confirmNewPassword)
+                    viewModel.send(.reset(current: currentPassword, new: confirmNewPassword))
                 }
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.none)
@@ -106,14 +105,37 @@ struct ResetUserPasswordView: View {
                     Label(L10n.passwordsDoNotMatch, systemImage: "exclamationmark.circle.fill")
                         .labelStyle(.sectionFooterWithImage(imageStyle: .orange))
                 }
+            }
 
+            Section {
+                if viewModel.state == .resetting {
+                    Button(L10n.cancel, role: .destructive) {
+                        viewModel.send(.cancel)
+
+                        if requiresCurrentPassword {
+                            focusedField = .currentPassword
+                        } else {
+                            focusedField = .newPassword
+                        }
+                    }
+                    .buttonStyle(.primary)
+                } else {
+                    Button(L10n.save) {
+                        focusedField = nil
+                        viewModel.send(.reset(current: currentPassword, new: confirmNewPassword))
+                    }
+                    .buttonStyle(.primary)
+                    .disabled(newPassword != confirmNewPassword || viewModel.state == .resetting)
+                    .foregroundStyle(accentColor.overlayColor, accentColor)
+                }
+            } footer: {
                 Text(L10n.passwordChangeWarning)
             }
         }
         .interactiveDismissDisabled(viewModel.state == .resetting)
         .navigationBarBackButtonHidden(viewModel.state == .resetting)
         .navigationTitle(L10n.password)
-        .toolbarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.inline)
         .navigationBarCloseButton {
             router.dismiss()
         }
@@ -124,12 +146,11 @@ struct ResetUserPasswordView: View {
                 focusedField = .newPassword
             }
         }
-        .onReceive(viewModel.$error) { error in
-            guard error != nil else { return }
-            UIDevice.feedback(.error)
-        }
         .onReceive(viewModel.events) { event in
             switch event {
+            case let .error(eventError):
+                UIDevice.feedback(.error)
+                error = eventError
             case .success:
                 UIDevice.feedback(.success)
                 isPresentingSuccess = true
@@ -138,40 +159,6 @@ struct ResetUserPasswordView: View {
         .topBarTrailing {
             if viewModel.state == .resetting {
                 ProgressView()
-
-                Button(L10n.cancel, role: .cancel) {
-                    viewModel.cancel()
-
-                    if requiresCurrentPassword {
-                        focusedField = .currentPassword
-                    } else {
-                        focusedField = .newPassword
-                    }
-                }
-                .foregroundStyle(.primary, .secondary)
-                .backport
-                .buttonStyle(.glass)
-                .controlSize(.small)
-            } else {
-                let saveAction: () -> Void = {
-                    focusedField = nil
-                    viewModel.reset(current: currentPassword, new: confirmNewPassword)
-                }
-
-                if #available(iOS 26, *) {
-                    Button(
-                        L10n.save,
-                        role: .confirm,
-                        action: saveAction
-                    )
-                    .enabled(isValid)
-                } else {
-                    Button(L10n.save, action: saveAction)
-                        .backport
-                        .buttonStyle(.glassProminent)
-                        .controlSize(.small)
-                        .enabled(isValid)
-                }
             }
         }
         .alert(
@@ -184,7 +171,7 @@ struct ResetUserPasswordView: View {
         } message: {
             Text(L10n.passwordChangedMessage)
         }
-        .errorMessage($viewModel.error) {
+        .errorMessage($error) {
             focusedField = .newPassword
         }
     }

@@ -9,7 +9,7 @@
 import Foundation
 import SwiftUI
 
-struct GestureView: PlatformViewRepresentable {
+struct GestureView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> UIView {
         let view = UIView(frame: .zero)
