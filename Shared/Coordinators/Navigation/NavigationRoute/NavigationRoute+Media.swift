@@ -7,7 +7,7 @@
 //
 
 import Defaults
-import FactoryKit
+import Factory
 import JellyfinAPI
 import PreferencesView
 import SwiftUI
@@ -15,22 +15,19 @@ import Transmission
 
 extension NavigationRoute {
 
-    @MainActor
-    static var liveGuide: NavigationRoute {
+    static var channels: NavigationRoute {
         NavigationRoute(
-            id: "liveGuide"
+            id: "channels"
         ) {
-            EPGView()
+            ChannelLibraryView()
         }
     }
 
-    @MainActor
     static var liveTV: NavigationRoute {
         NavigationRoute(
-            id: "liveTV",
-            withNamespace: { .push(.zoom(sourceID: "item", namespace: $0)) }
+            id: "liveTV"
         ) {
-            ContentGroupView(provider: LiveTVGroupProvider())
+            ProgramsView()
         }
     }
 
@@ -51,19 +48,57 @@ extension NavigationRoute {
 
     @MainActor
     static func videoPlayer(
-        provider: MediaPlayerItemProvider,
-        queue: (any MediaPlayerQueue)? = nil
+        item: BaseItemDto,
+        mediaSource: MediaSourceInfo? = nil,
+        queue: (any MediaPlayerQueue)? = nil,
+        startTimeTicks: Int? = nil
     ) -> NavigationRoute {
-        let manager = MediaPlayerManager(
-            provider: provider,
-            queue: queue
-        )
+        // Hybrid engine selection happens HERE, at route time, because the player view fixes its proxy
+        // (VLC vs AVPlayer) in its initializer — before the async build runs. We resolve the engine once
+        // from the item's media streams and thread the SAME value to both the build (so the device
+        // profile matches) and the view shim (so the proxy matches). See `VideoPlayerType.hybrid(for:)`.
+        let playerType = VideoPlayerType.hybrid(for: mediaSource ?? item.mediaSources?.first)
 
-        return Self.videoPlayer(manager: manager)
+        let provider = MediaPlayerItemProvider(item: item) { item in
+            try await MediaPlayerItem.build(
+                for: item,
+                mediaSource: mediaSource,
+                videoPlayerType: playerType,
+                // `build` re-fetches the item via `getFullItem`, which replaces any resume position the
+                // caller set on `item.userData`. SyncPlay needs the player to start at the GROUP's current
+                // position (not this user's saved one), so we re-apply it here, AFTER the re-fetch.
+                modifyItem: startTimeTicks.map { ticks in
+                    { (built: inout BaseItemDto) in
+                        // `key` is non-optional from SDK 3.x; synthetic client-only user data, never POSTed.
+                        if built.userData == nil { built.userData = UserItemDataDto(key: "") }
+                        built.userData?.playbackPositionTicks = ticks
+                    }
+                }
+            )
+        }
+        return Self.videoPlayer(provider: provider, queue: queue, playerType: playerType)
     }
 
     @MainActor
-    static func videoPlayer(manager: MediaPlayerManager) -> NavigationRoute {
+    static func videoPlayer(
+        provider: MediaPlayerItemProvider,
+        queue: (any MediaPlayerQueue)? = nil,
+        playerType: VideoPlayerType = Defaults[.VideoPlayer.videoPlayerType]
+    ) -> NavigationRoute {
+        let manager = MediaPlayerManager(
+            item: provider.item,
+            queue: queue,
+            mediaPlayerItemProvider: provider.function
+        )
+
+        return Self.videoPlayer(manager: manager, playerType: playerType)
+    }
+
+    @MainActor
+    static func videoPlayer(
+        manager: MediaPlayerManager,
+        playerType: VideoPlayerType = Defaults[.VideoPlayer.videoPlayerType]
+    ) -> NavigationRoute {
 
         Container.shared.mediaPlayerManager.register {
             manager
@@ -76,7 +111,7 @@ extension NavigationRoute {
             id: "videoPlayer",
             style: .fullscreen
         ) {
-            VideoPlayerViewShim(manager: manager)
+            VideoPlayerViewShim(manager: manager, videoPlayerType: playerType)
         }
     }
 }
@@ -92,13 +127,17 @@ struct VideoPlayerViewShim: View {
 
     let manager: MediaPlayerManager
 
+    /// The engine resolved for this item by `VideoPlayerType.hybrid(for:)` (native AVPlayer for HDR /
+    /// Dolby Vision, VLC otherwise). Drives which proxy-backed view — and therefore which player — is
+    /// presented, kept consistent with the device profile the item was built with.
+    let videoPlayerType: VideoPlayerType
+
     var body: some View {
         Group {
-            switch Defaults[.VideoPlayer.videoPlayerType] {
-            case .native:
-                NativeVideoPlayer()
-            case .vlc, .mpv:
+            if videoPlayerType == .swiftfin {
                 VideoPlayer()
+            } else {
+                NativeVideoPlayer()
             }
         }
         .colorScheme(.dark) // use over `preferredColorScheme(.dark)` to not have destination change
@@ -107,12 +146,15 @@ struct VideoPlayerViewShim: View {
         .ignoresSafeArea()
         .persistentSystemOverlays(.hidden)
         .toolbar(.hidden, for: .navigationBar)
+        // Upstream (Swiftfin #2238): pause when the app backgrounds. The `pauseOnBackground` key already
+        // existed but nothing read it, so pressing Home mid-playback left audio running. Live TV is exempt —
+        // `ProwlogueLiveTVPlayer` owns its own scene-phase teardown (a paused live feed goes stale).
         .onSceneDidEnterBackground {
             if Defaults[.VideoPlayer.Transition.pauseOnBackground] {
                 manager.setPlaybackRequestStatus(status: .paused)
             }
         }
-        .onFrameChanged { _, safeArea in
+        .onSizeChanged { _, safeArea in
             self.safeAreaInsets = safeArea.max(EdgeInsets.edgePadding)
         }
     }

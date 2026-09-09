@@ -9,7 +9,6 @@
 import Foundation
 
 @_exported import CasePaths
-@_exported import Engine
 @_exported import StatefulMacros
 
 @inlinable

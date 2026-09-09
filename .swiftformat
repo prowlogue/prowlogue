@@ -1,11 +1,15 @@
-# version: 0.63.0
+# version: 0.59.1
 
 --swiftversion 6.2
 
 --assetliterals visual-width
 --computedvarattrs prev-line
 --funcattributes prev-line
---ifdef no-indent 
+# Prowlogue: `preserve`, not upstream's `no-indent`. The committed Swiftfin sources indent `#if`
+# bodies, which 0.59.1 (this config's target version) tolerated but 0.63.0+ actively rewrites — that
+# de-indented 40 stock files per build, pure formatting churn that would conflict on every upstream
+# cherry-pick. `preserve` leaves existing `#if` indentation alone in both styles.
+--ifdef preserve
 --maxwidth 140
 --semicolons never
 --shortoptionals "always"
@@ -47,8 +51,24 @@
     trailingCommas,         \
     yodaConditions
 
---exclude Shared/Strings/Strings.swift, \
-    fastlane/,				\
-	build/
+# Do not reformat the upstream Swiftfin sources.
+#
+# This config targets SwiftFormat 0.59.1 (see the version marker at the top), but newer releases
+# change their DEFAULT rules — 0.63.0 rewrites `#if` indentation and expands single-line `if` bodies,
+# which churned ~40 stock files on every build. Formatting upstream's sources buys us nothing and
+# makes every future cherry-pick from jellyfin/Swiftfin conflict on whitespace, so the stock trees
+# (Shared/, Swiftfin/, Swiftfin tvOS/, Scripts/) and the vendored packages (CoreStore/,
+# PreferencesView/) are excluded.
+#
+# Consequence to know about: new files under the stock trees won't get the MPL header stamped
+# automatically — add it by hand (or format that one file explicitly).
+#
+# The tvOS stock subdirectories are listed INDIVIDUALLY rather than excluding `Swiftfin tvOS/`
+# wholesale, so add a line here if upstream adds a new tvOS top-level folder. Verified with
+# `swiftformat . --dryrun --verbose`.
+--exclude Shared/, Swiftfin/, Scripts/, fastlane/, CoreStore/, PreferencesView/, _QuarantinedLegacy/, \
+    Swiftfin tvOS/App/, Swiftfin tvOS/Components/, Swiftfin tvOS/Coordinators/, \
+    Swiftfin tvOS/Extensions/, Swiftfin tvOS/Objects/, Swiftfin tvOS/ViewModels/, \
+    Swiftfin tvOS/Views/
 
 --header "\nSwiftfin is subject to the terms of the Mozilla Public\nLicense, v2.0. If a copy of the MPL was not distributed with this\nfile, you can obtain one at https://mozilla.org/MPL/2.0/.\n\nCopyright (c) {year} Jellyfin & Jellyfin Contributors\n"

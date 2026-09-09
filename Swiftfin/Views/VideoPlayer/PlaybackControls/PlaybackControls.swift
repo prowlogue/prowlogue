@@ -41,19 +41,17 @@ extension VideoPlayer {
             containerState.isScrubbing
         }
 
-        private var isPresentingFullScreenSupplement: Bool {
-            !containerState.isCompact &&
-                containerState.selectedSupplement?.presentationStyle == .expanded
-        }
-
         // MARK: body
 
         var body: some View {
             ZStack {
+
+                // MARK: - Buttons and Supplements
+
                 VStack {
                     Toolbar()
                         .frame(height: 50)
-                        .isVisible(!isScrubbing && isPresentingOverlay && !isPresentingFullScreenSupplement)
+                        .isVisible(!isScrubbing && isPresentingOverlay)
                         .padding(.top, safeAreaInsets.top)
                         .padding(.leading, safeAreaInsets.leading)
                         .padding(.trailing, safeAreaInsets.trailing)
@@ -75,7 +73,7 @@ extension VideoPlayer {
                         }
                         .background(alignment: .top) {
                             Color.black
-                                .mask(gradient: .linear) {
+                                .maskLinearGradient {
                                     (location: 0, opacity: 0)
                                     (location: 1, opacity: 0.5)
                                 }
@@ -91,8 +89,9 @@ extension VideoPlayer {
             .animation(.linear(duration: 0.1), value: isScrubbing)
             .animation(.bouncy(duration: 0.4), value: containerState.isPresentingSupplement)
             .animation(.bouncy(duration: 0.25), value: containerState.isPresentingOverlay)
-            .onChange(of: manager.proxy?.isBuffering.value) {
-                activeIsBuffering = manager.proxy?.isBuffering.value ?? false
+            .backport
+            .onChange(of: manager.proxy?.isBuffering.value) { _, newValue in
+                activeIsBuffering = newValue ?? false
             }
             .disabled(manager.error != nil)
         }

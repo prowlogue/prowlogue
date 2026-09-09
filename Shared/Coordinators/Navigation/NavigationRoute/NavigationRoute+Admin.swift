@@ -14,9 +14,9 @@ extension NavigationRoute {
 
     // MARK: - Active Sessions
 
-    static func activeSessionDetails(viewModel: SessionViewModel) -> NavigationRoute {
-        NavigationRoute(id: "activeSessionDetails") {
-            ActiveSessionDetailsView(viewModel: viewModel)
+    static func activeDeviceDetails(box: BindingBox<SessionInfoDto?>) -> NavigationRoute {
+        NavigationRoute(id: "activeDeviceDetails") {
+            ActiveSessionDetailView(box: box)
         }
     }
 
@@ -44,12 +44,23 @@ extension NavigationRoute {
         }
     }
 
-    static func activityFilters(environment: Binding<ServerActivityLibrary.Environment>) -> NavigationRoute {
+    static func activityFilters(viewModel: ServerActivityViewModel) -> NavigationRoute {
         NavigationRoute(
             id: "activityFilters",
             style: .sheet
         ) {
-            ServerActivityFilterView(environment: environment)
+            ServerActivityFilterView(viewModel: viewModel)
+        }
+    }
+
+    // MARK: - Server Tasks
+
+    static func addServerTaskTrigger(observer: ServerTaskObserver) -> NavigationRoute {
+        NavigationRoute(
+            id: "addServerTaskTrigger",
+            style: .sheet
+        ) {
+            AddTaskTriggerView(observer: observer)
         }
     }
 
@@ -74,33 +85,6 @@ extension NavigationRoute {
         }
     }
 
-    // MARK: - Backups
-
-    static var backups: NavigationRoute {
-        NavigationRoute(
-            id: "backups"
-        ) {
-            ServerBackupView()
-        }
-    }
-
-    static func backupDetails(viewModel: ServerBackupViewModel, backup: BackupManifestDto) -> NavigationRoute {
-        NavigationRoute(
-            id: "backupDetails"
-        ) {
-            ServerBackupDetailsView(viewModel: viewModel, backup: backup)
-        }
-    }
-
-    static func createBackup(viewModel: ServerBackupViewModel) -> NavigationRoute {
-        NavigationRoute(
-            id: "createBackup",
-            style: .sheet
-        ) {
-            CreateServerBackupView(viewModel: viewModel)
-        }
-    }
-
     // MARK: - Devices
 
     static func deviceDetails(device: DeviceInfoDto, viewModel: DevicesViewModel) -> NavigationRoute {
@@ -114,6 +98,14 @@ extension NavigationRoute {
             id: "devices"
         ) {
             DevicesView()
+        }
+    }
+
+    // MARK: - Server Tasks
+
+    static func editServerTask(observer: ServerTaskObserver) -> NavigationRoute {
+        NavigationRoute(id: "editServerTask") {
+            EditServerTaskView(observer: observer)
         }
     }
 
@@ -151,21 +143,6 @@ extension NavigationRoute {
             id: "tasks"
         ) {
             ServerTasksView()
-        }
-    }
-
-    static func taskDetails(viewModel: ServerTaskViewModel) -> NavigationRoute {
-        NavigationRoute(id: "taskDetails") {
-            ServerTaskDetailsView(viewModel: viewModel)
-        }
-    }
-
-    static func taskTrigger(viewModel: ServerTaskViewModel) -> NavigationRoute {
-        NavigationRoute(
-            id: "taskTrigger",
-            style: .sheet
-        ) {
-            ServerTaskTriggerView(viewModel: viewModel)
         }
     }
 

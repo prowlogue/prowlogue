@@ -75,29 +75,17 @@ struct PhotoCropView: View {
             }
 
             if coordinator.hasChanges {
-                Button(L10n.reset, role: .destructive) {
+                Button(L10n.reset) {
                     coordinator.reset()
                 }
-                .backport
-                .buttonStyle(.glassProminent)
-                .controlSize(.small)
+                .buttonStyle(.toolbarPill(.red))
                 .disabled(isSaving)
             }
 
-            let saveAction: () -> Void = {
+            Button(L10n.save) {
                 coordinator.crop()
             }
-
-            Group {
-                if #available(iOS 26, *) {
-                    Button(L10n.save, role: .confirm, action: saveAction)
-                } else {
-                    Button(L10n.save, action: saveAction)
-                        .backport
-                        .buttonStyle(.glassProminent)
-                        .controlSize(.small)
-                }
-            }
+            .buttonStyle(.toolbarPill)
             .disabled(isSaving)
         }
         .toolbarBackground(.visible, for: .navigationBar)
@@ -107,7 +95,7 @@ struct PhotoCropView: View {
 
 // MARK: - Controller View
 
-private struct _PhotoCropView: PlatformViewControllerRepresentable {
+private struct _PhotoCropView: UIViewControllerRepresentable {
 
     class Coordinator: ObservableObject, CropViewControllerDelegate {
 

@@ -7,7 +7,8 @@
 //
 
 import CoreStore
-import FactoryKit
+import Defaults
+import Factory
 import Logging
 import Nuke
 import PulseLogHandler
@@ -17,15 +18,19 @@ extension SwiftfinApp {
 
     static func configure() {
 
+        #if DEBUG
+        SwizzleDefaults.set(Defaults[.isLiquidGlassEnabled], for: "com.apple.SwiftUI.IgnoreSolariumOptOut")
+        #endif
+
         // Logging
         LoggingSystem.bootstrap { label in
 
             // TODO: have setting for log level
             //       - default info, boolean to go down to trace
             let handlers: [any LogHandler] = [PersistentLogHandler(label: label)]
-                #if DEBUG
-                    .appending(SwiftfinConsoleHandler())
-                #endif
+            #if DEBUG
+                .appending(SwiftfinConsoleHandler())
+            #endif
 
             var multiplexHandler = MultiplexLogHandler(handlers)
             multiplexHandler.logLevel = .trace
@@ -48,5 +53,34 @@ extension SwiftfinApp {
         }
 
         ImagePipeline.shared = .Swiftfin.posters
+
+        configureMemoryPressureHandling()
+
+        _ = Container.shared.userSessionManager()
+    }
+
+    // Retained for the lifetime of the app so the source keeps firing.
+    private static var memoryPressureSource: DispatchSourceMemoryPressure?
+
+    /// Last-resort memory backstop. Only fires on `.critical` (the system is about to start killing
+    /// apps) — deliberately **not** on `.warning`, which fires routinely during heavy poster
+    /// browsing: clearing the decoded-image cache that often makes on-screen images (e.g. the Home
+    /// spotlight backdrop) momentarily fall back to their low-res BlurHash placeholder. Nuke already
+    /// trims its cache on normal UIKit memory warnings, and the NavigationStack drill-down now bounds
+    /// navigation memory, so this only needs to handle a genuine emergency. The on-disk data cache is
+    /// kept, so cleared images re-decode quickly.
+    private static func configureMemoryPressureHandling() {
+        let source = DispatchSource.makeMemoryPressureSource(
+            eventMask: [.critical],
+            queue: .main
+        )
+
+        source.setEventHandler {
+            ImageCache.shared.removeAll()
+            ImagePipeline.shared.cache.removeAll(caches: [.memory])
+        }
+
+        source.resume()
+        memoryPressureSource = source
     }
 }

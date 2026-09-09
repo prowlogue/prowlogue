@@ -9,6 +9,13 @@
 import Foundation
 import JellyfinAPI
 
+/// A ceiling on the video HEIGHT the client will accept, expressed as an extra `CodecProfile` appended to the
+/// built `DeviceProfile`. Anything taller is transcoded down by the server.
+///
+/// This is the resolution counterpart to `PlaybackBitrate` — useful on a constrained connection where capping
+/// bitrate alone yields a soft, heavily-compressed 4K stream instead of a clean 1080p one.
+///
+/// Upstream: Swiftfin #2194.
 enum PlaybackResolution: Int, CaseIterable, Displayable, Storable {
 
     case max = 0
@@ -24,13 +31,16 @@ enum PlaybackResolution: Int, CaseIterable, Displayable, Storable {
     var displayTitle: String {
         switch self {
         case .max:
-            return L10n.maximum
+            /// Shares the "Maximum" string with `PlaybackBitrate.max` rather than adding a near-duplicate
+            /// localization key.
+            return L10n.bitrateMax
         default:
             guard rawValue > 0 else { return L10n.unknown }
             return "\(rawValue.description)p"
         }
     }
 
+    /// The condition to append to the device profile, or `nil` for `.max` (no cap → no condition).
     var codecProfile: CodecProfile? {
         guard rawValue > 0 else { return nil }
 

@@ -59,8 +59,4 @@ extension LibraryParent {
 
         return parameters
     }
-
-    var pagingLibraryID: String {
-        id ?? displayTitle
-    }
 }

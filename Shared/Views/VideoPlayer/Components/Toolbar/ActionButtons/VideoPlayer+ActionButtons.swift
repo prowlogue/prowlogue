@@ -28,7 +28,7 @@ extension VideoPlayer.PlaybackControls.Toolbar {
         @FocusState
         private var focusedButton: String?
 
-        private func resolvedActionButtons(_ rawButtons: [VideoPlayerActionButton]) -> [VideoPlayerActionButton] {
+        private func filteredActionButtons(_ rawButtons: [VideoPlayerActionButton]) -> [VideoPlayerActionButton] {
             var filteredButtons = rawButtons
 
             if manager.playbackItem?.audioStreams.isEmpty == true {
@@ -49,7 +49,7 @@ extension VideoPlayer.PlaybackControls.Toolbar {
                 filteredButtons.removeAll { $0 == .audio }
                 filteredButtons.removeAll { $0 == .autoPlay }
                 filteredButtons.removeAll { $0 == .playbackSpeed }
-                filteredButtons.removeAll { $0 == .playbackSettings }
+//                filteredButtons.removeAll { $0 == .playbackQuality }
                 filteredButtons.removeAll { $0 == .subtitles }
             }
 
@@ -57,27 +57,24 @@ extension VideoPlayer.PlaybackControls.Toolbar {
         }
 
         private var barActionButtons: [VideoPlayerActionButton] {
-            resolvedActionButtons(rawBarActionButtons)
+            filteredActionButtons(rawBarActionButtons)
         }
 
         private var menuActionButtons: [VideoPlayerActionButton] {
-            resolvedActionButtons(rawMenuActionButtons)
-        }
-
-        private var menuSystemImage: String {
-            if UIDevice.isTV || UIDevice.supportsLiquidGlass {
-                "ellipsis"
-            } else {
-                "ellipsis.circle"
-            }
-        }
-
-        private var buttonSize: CGFloat {
-            VideoPlayer.PlaybackControls.Toolbar.buttonSize
-        }
-
-        private var menuLabel: some View {
-            Label(L10n.menu, systemImage: menuSystemImage)
+            #if os(tvOS)
+            // Prowlogue: the menu is the OVERFLOW of the bar — every actionable button NOT on the bar, in the
+            // same canonical order. So toggling a button onto the bar removes it from the menu (no duplication),
+            // and hiding it from the bar puts it in the menu. There is no separate menu configuration.
+            //
+            // EXCEPTION: Previous / Next are BAR-ONLY — they never appear in the menu whether enabled or not
+            // (hiding them from the bar just removes them entirely).
+            let notOnBar = VideoPlayerActionButton.prowlogueControlOrder
+                .filter { !rawBarActionButtons.contains($0) }
+                .filter { $0 != .playNextItem && $0 != .playPreviousItem }
+            return filteredActionButtons(notOnBar)
+            #else
+            return filteredActionButtons(rawMenuActionButtons)
+            #endif
         }
 
         @ViewBuilder
@@ -95,8 +92,8 @@ extension VideoPlayer.PlaybackControls.Toolbar {
             #endif
             case .playbackSpeed:
                 PlaybackRateMenu()
-            case .playbackSettings:
-                PlaybackSettings()
+//            case .playbackQuality:
+//                PlaybackQuality()
             case .playNextItem:
                 PlayNextItem()
             case .playPreviousItem:
@@ -108,11 +105,15 @@ extension VideoPlayer.PlaybackControls.Toolbar {
 
         @ViewBuilder
         private var compactView: some View {
-            Menu {
+            Menu(
+                L10n.menu,
+                systemImage: "ellipsis.circle"
+            ) {
                 ForEach(
                     barActionButtons,
                     content: view(for:)
                 )
+                .environment(\.isInMenu, true)
 
                 Divider()
 
@@ -120,53 +121,47 @@ extension VideoPlayer.PlaybackControls.Toolbar {
                     menuActionButtons,
                     content: view(for:)
                 )
-            } label: {
-                menuLabel
+                .environment(\.isInMenu, true)
             }
-            .frame(width: buttonSize, height: buttonSize)
-            .withViewContext(.isInMenu)
         }
 
         @ViewBuilder
         private var regularView: some View {
-            HStack(spacing: VideoPlayer.PlaybackControls.Toolbar.buttonSpacing) {
+            HStack(spacing: UIDevice.isTV ? 16 : 0) {
                 ForEach(barActionButtons) { button in
                     view(for: button)
-                        .frame(width: buttonSize, height: buttonSize)
                         .focused($focusedButton, equals: button.rawValue)
                 }
 
                 if menuActionButtons.isNotEmpty {
-                    Menu {
+                    Menu(
+                        L10n.menu,
+                        systemImage: UIDevice.isTV ? "ellipsis" : "ellipsis.circle"
+                    ) {
                         ForEach(
                             menuActionButtons,
                             content: view(for:)
                         )
-                        .withViewContext(.isInMenu)
-                    } label: {
-                        menuLabel
+                        .environment(\.isInMenu, true)
                     }
-                    .frame(width: buttonSize, height: buttonSize)
                     .focused($focusedButton, equals: "menu")
                 }
             }
+            .focusSection()
+            .backport
             .defaultFocus(
                 $focusedButton,
                 barActionButtons.first?.rawValue ?? "menu",
                 priority: .userInitiated
             )
-            .focusSection()
         }
 
         var body: some View {
-            Group {
-                if containerState.isCompact {
-                    compactView
-                } else {
-                    regularView
-                }
+            if containerState.isCompact {
+                compactView
+            } else {
+                regularView
             }
-            .modifier(VideoPlayer.PlaybackControls.OverlayBarButtonStyleModifier())
         }
     }
 }

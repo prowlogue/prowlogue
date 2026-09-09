@@ -6,28 +6,30 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
-import JellyfinAPI
 import SwiftUI
 
 // TODO: selected icon
 @MainActor
-struct TabItem: Displayable, @MainActor Identifiable, @MainActor Hashable {
+struct TabItem: Identifiable, Hashable {
 
     let content: AnyView
-    let displayTitle: String
     let id: String
+    let title: String
     let systemImage: String
+    let labelStyle: any LabelStyle
 
     init(
         id: String,
         title: String,
         systemImage: String,
+        labelStyle: some LabelStyle = .titleAndIcon,
         @ViewBuilder content: () -> some View
     ) {
         self.content = AnyView(content())
         self.id = id
-        self.displayTitle = title
+        self.title = title
         self.systemImage = systemImage
+        self.labelStyle = labelStyle
     }
 
     func hash(into hasher: inout Hasher) {
@@ -41,42 +43,19 @@ struct TabItem: Displayable, @MainActor Identifiable, @MainActor Hashable {
 
 extension TabItem {
 
-    static var adminDashboard: TabItem {
+    static var home: TabItem {
         TabItem(
-            id: "admin-dashboard",
-            title: L10n.dashboard,
-            systemImage: "server.rack"
+            id: "home",
+            title: L10n.home,
+            systemImage: "house"
         ) {
-            #if os(iOS)
-            AdminDashboardView()
+            // tvOS uses the native Prowlogue home. The original `HomeView()` is left intact for
+            // iOS and can be restored by reverting this one line.
+            #if os(tvOS)
+            ProwlogueHomeView()
             #else
-            EmptyView()
+            HomeView()
             #endif
-        }
-    }
-
-    static func contentGroup(
-        provider: some ContentGroupProvider
-    ) -> TabItem {
-        TabItem(
-            id: provider.id,
-            title: provider.displayTitle,
-            systemImage: "house.fill"
-        ) {
-            ContentGroupView(provider: provider)
-        }
-    }
-
-    static func item(id: String, displayTitle: String) -> TabItem {
-        let item = BaseItemDto(id: id, name: displayTitle)
-        let provider = ItemContentGroupProvider(item: item)
-
-        return TabItem(
-            id: id,
-            title: displayTitle,
-            systemImage: item.systemImage
-        ) {
-            ItemView(provider: provider)
         }
     }
 
@@ -90,17 +69,37 @@ extension TabItem {
             title: title,
             systemImage: systemName
         ) {
-            PagingLibraryView(
-                library: ItemLibrary(
-                    parent: BaseItemDto(name: title),
-                    filters: filters
-                )
+            let viewModel = ItemLibraryViewModel(
+                filters: filters
             )
-            .if(UIDevice.isTV) { view in
-                view.toolbar(.hidden, for: .navigationBar)
-            }
+
+            PagingLibraryView(viewModel: viewModel)
         }
     }
+
+    #if os(tvOS)
+    static var liveTV: TabItem {
+        TabItem(
+            id: "liveTV",
+            title: L10n.liveTV,
+            systemImage: "tv"
+        ) {
+            // tvOS landing page. Revert paths (this one line): `LiveTVGuideView()` or `NativeProgramGuideView()`.
+            ProwlogueLiveTVView()
+        }
+    }
+
+    static var requests: TabItem {
+        TabItem(
+            id: "requests",
+            title: "Requests",
+            systemImage: "rectangle.stack.badge.plus"
+        ) {
+            // tvOS landing page (revert this one line): `RequestsView()`.
+            NativeRequestsView()
+        }
+    }
+    #endif
 
     static var media: TabItem {
         TabItem(
@@ -108,20 +107,12 @@ extension TabItem {
             title: L10n.media,
             systemImage: "rectangle.stack.fill"
         ) {
-            PagingLibraryView(library: UserViewLibrary())
-                .if(UIDevice.isTV) { view in
-                    view.toolbar(.hidden, for: .navigationBar)
-                }
-        }
-    }
-
-    static var liveTV: TabItem {
-        TabItem(
-            id: "live-tv",
-            title: L10n.liveTV,
-            systemImage: "play.tv"
-        ) {
-            NavigationRoute.liveTV.destination
+            // tvOS landing page (revert this one line): `MediaView()`.
+            #if os(tvOS)
+            NativeMediaView()
+            #else
+            MediaView()
+            #endif
         }
     }
 
@@ -131,10 +122,12 @@ extension TabItem {
             title: L10n.search,
             systemImage: "magnifyingglass"
         ) {
+            // tvOS landing page. Revert paths (this one line): `NativeSearchView()` or `SearchView()`.
+            #if os(tvOS)
+            ProwlogueSearchView()
+            #else
             SearchView()
-                .if(UIDevice.isTV) { view in
-                    view.toolbar(.hidden, for: .navigationBar)
-                }
+            #endif
         }
     }
 
@@ -142,9 +135,34 @@ extension TabItem {
         TabItem(
             id: "settings",
             title: L10n.settings,
-            systemImage: "gearshape"
+            systemImage: "gearshape",
+            // Settings is the ONLY tab shown icon-only (just the gear) — no "Settings" text label. The
+            // `title` is still set so VoiceOver/accessibility reads it; only the visible label is hidden.
+            labelStyle: .iconOnly
         ) {
+            // tvOS landing page. Revert paths (this one line): `NativeSettingsView()` (previous native
+            // page, still reachable via the DEBUG-only Classic Settings tab) or `SettingsView()` (stock).
+            #if os(tvOS)
+            ProwlogueSettingsView()
+            #else
             SettingsView()
+            #endif
         }
     }
+
+    #if os(tvOS) && DEBUG
+    // DEBUG-only comparison tab: the previous native Settings page, shown alongside the new
+    // `ProwlogueSettingsView` so the two can be eyeballed side-by-side on device. Distinct icon
+    // ("gearshape.2") + a visible "Classic" label so it's obvious which is which. Remove this tab
+    // (and its entry in `MainTabView`) once the redesign is signed off.
+    static var classicSettings: TabItem {
+        TabItem(
+            id: "classicSettings",
+            title: "Classic",
+            systemImage: "gearshape.2"
+        ) {
+            NativeSettingsView()
+        }
+    }
+    #endif
 }

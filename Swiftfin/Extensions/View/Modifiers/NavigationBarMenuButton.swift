@@ -9,61 +9,32 @@
 import Defaults
 import SwiftUI
 
-struct NavigationBarMenuButtonModifier<MenuContent: View>: ViewModifier {
+struct NavigationBarMenuButtonModifier<Content: View>: ViewModifier {
 
     @Default(.accentColor)
     private var accentColor
 
-    @State
-    private var collectedMenuGroups: [MenuContentGroup] = []
-
-    private let menuContent: MenuContent
-    private let isLoading: Bool
-    private let isHidden: Bool
-
-    init(
-        isLoading: Bool = false,
-        isHidden: Bool = false,
-        @ViewBuilder menuContent: () -> MenuContent
-    ) {
-        self.isLoading = isLoading
-        self.isHidden = isHidden
-        self.menuContent = menuContent()
-    }
+    let isLoading: Bool
+    let isHidden: Bool
+    let items: () -> Content
 
     func body(content: Self.Content) -> some View {
-        content
-            .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
+        content.toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
 
-                    if isLoading {
-                        ProgressView()
+                if isLoading {
+                    ProgressView()
+                }
+
+                if !isHidden {
+                    Menu(L10n.options, systemImage: "ellipsis.circle") {
+                        items()
                     }
-
-//                    if !isHidden, collectedMenuGroups.isNotEmpty {
-                    if !isHidden {
-
-                        let systemImage = if #available(iOS 26, *) {
-                            "ellipsis"
-                        } else {
-                            "ellipsis.circle"
-                        }
-
-                        Menu(L10n.options, systemImage: systemImage) {
-                            menuContent
-
-                            ForEach(collectedMenuGroups) { group in
-                                group.content
-                            }
-                        }
-                        .labelStyle(.iconOnly)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(accentColor)
-                    }
+                    .labelStyle(.iconOnly)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(accentColor)
                 }
             }
-            .onPreferenceChange(MenuContentKey.self) { newGroups in
-                collectedMenuGroups = newGroups
-            }
+        }
     }
 }

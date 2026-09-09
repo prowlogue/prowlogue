@@ -8,6 +8,12 @@
 
 enum UserSessionError: Error {
 
-    case invalidStoredSession(userID: String)
     case missingCurrentSession
+
+    var localizedDescription: String? {
+        switch self {
+        case .missingCurrentSession:
+            "No signed-in user session is available."
+        }
+    }
 }

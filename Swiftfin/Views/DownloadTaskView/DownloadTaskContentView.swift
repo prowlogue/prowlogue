@@ -7,7 +7,7 @@
 //
 
 import Defaults
-import FactoryKit
+import Factory
 import JellyfinAPI
 import SwiftUI
 
@@ -34,12 +34,12 @@ extension DownloadTaskView {
             VStack(alignment: .leading, spacing: 10) {
 
                 VStack(alignment: .center) {
-                    ImageView(downloadTask.item.imageSources(for: .landscape, size: .custom(width: 600)))
+                    ImageView(downloadTask.item.landscapeImageSources(maxWidth: 600))
                         .frame(maxHeight: 300)
                         .aspectRatio(1.77, contentMode: .fill)
                         .cornerRadius(10)
                         .padding(.horizontal)
-                        .subtleShadow()
+                        .posterShadow()
 
                     ShelfView(downloadTask: downloadTask)
 
@@ -84,7 +84,7 @@ extension DownloadTaskView {
                         }
                     case .complete:
                         Button(L10n.play) {
-                            if Defaults[.VideoPlayer.videoPlayerType] == .vlc {
+                            if Defaults[.VideoPlayer.videoPlayerType] == .swiftfin {
                                 router.dismiss()
 //                                    router.route(to: .videoPlayer(manager: DownloadVideoPlayerManager(downloadTask: downloadTask)))
                             } else {

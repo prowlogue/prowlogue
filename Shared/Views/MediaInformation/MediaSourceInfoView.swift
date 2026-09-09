@@ -28,9 +28,10 @@ struct MediaSourceInfoView: PlatformView {
             router.route(to: .mediaStreamInfo(mediaStream: stream))
         }
         .focused($focusedStream, equals: stream)
-        .onChange(of: focusedStream) {
-            if let focusedStream {
-                selectedStream = focusedStream
+        .backport
+        .onChange(of: focusedStream) { _, newValue in
+            if let newValue {
+                selectedStream = newValue
             }
         }
     }
@@ -73,15 +74,10 @@ struct MediaSourceInfoView: PlatformView {
     var iOSView: some View {
         contentView
             .navigationTitle(source.displayTitle)
-            .toolbarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.inline)
             .navigationBarCloseButton {
                 router.dismiss()
             }
-            #if os(iOS)
-            .topBarTrailing {
-                source.shareLink
-            }
-            #endif
     }
 
     var tvOSView: some View {
@@ -96,6 +92,7 @@ struct MediaSourceInfoView: PlatformView {
                 }
             }
         }
+        .backport
         .scrollClipDisabled()
         .navigationTitle(source.displayTitle)
     }

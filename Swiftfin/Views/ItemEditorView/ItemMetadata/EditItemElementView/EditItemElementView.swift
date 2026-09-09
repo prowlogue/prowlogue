@@ -7,23 +7,26 @@
 //
 
 import Combine
+import Defaults
 import JellyfinAPI
 import SwiftUI
 
-// TODO: Only have people have .plain style, grouped for normal text
+// TODO: move away from the `route` method for adding a new item
+struct EditItemElementView<Element: Hashable>: View {
 
-struct EditItemElementView<Editor: ItemComponentEditor>: View {
+    @Default(.accentColor)
+    private var accentColor
 
     @ObservedObject
-    private var viewModel: ItemComponentEditorViewModel<Editor>
+    var viewModel: ItemEditorViewModel<Element>
 
     @Router
     private var router
 
     @State
-    private var elements: [Editor.Element]
+    private var elements: [Element]
     @State
-    private var selectedElements: Set<Editor.Element> = []
+    private var selectedElements: Set<Element> = []
     @State
     private var isEditing: Bool = false
     @State
@@ -31,82 +34,26 @@ struct EditItemElementView<Editor: ItemComponentEditor>: View {
     @State
     private var isPresentingDeletionConfirmation = false
 
-    init(viewModel: ItemComponentEditorViewModel<Editor>) {
+    private let type: ItemArrayElements
+    private let route: (NavigationCoordinator.Router, ItemEditorViewModel<Element>) -> Void
+
+    init(
+        viewModel: ItemEditorViewModel<Element>,
+        type: ItemArrayElements,
+        route: @escaping (NavigationCoordinator.Router, ItemEditorViewModel<Element>) -> Void
+    ) {
         self.viewModel = viewModel
-        self.elements = viewModel.editor.elements(in: viewModel.item)
+        self.type = type
+        self.route = route
+        self.elements = type.getElement(for: viewModel.item)
     }
 
-    @ViewBuilder
-    private var navigationBarSelectView: some View {
-        let isAllSelected = selectedElements.count == (elements.count)
-        Button(isAllSelected ? L10n.removeAll : L10n.selectAll) {
-            selectedElements = isAllSelected ? [] : Set(elements)
-        }
-        .foregroundStyle(.primary, .secondary)
-        .if(true) { view in
-            if #available(iOS 26.0, *) {
-                view
-            } else {
-                view
-                    .backport
-                    .buttonStyle(.glass)
-            }
-        }
-        .controlSize(.small)
-        .disabled(!isEditing)
-    }
-
-    @ViewBuilder
-    private var contentView: some View {
-        List {
-            InsetGroupedListHeader(viewModel.editor.displayTitle, description: viewModel.editor.description)
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-                .padding(.vertical, 24)
-
-            if elements.isNotEmpty {
-                ForEach(elements, id: \.self) { element in
-                    element.makeBody(
-                        libraryStyle: .init(displayType: .list, posterDisplayType: .portrait, listColumnCount: 1),
-                        action: {
-                            if isEditing {
-                                selectedElements.toggle(value: element)
-                            }
-                        }
-                    )
-                    .isEditing(isEditing)
-                    .isSelected(selectedElements.contains(element))
-                    .listRowInsets(.edgeInsets)
-                    .swipeActions {
-                        Button(
-                            L10n.delete,
-                            systemImage: "trash"
-                        ) {
-                            selectedElements.toggle(value: element)
-                            isPresentingDeletionConfirmation = true
-                        }
-                        .tint(.red)
-                    }
-                }
-                .onMove { source, destination in
-                    guard isReordering else { return }
-                    elements.move(fromOffsets: source, toOffset: destination)
-                }
-            } else {
-                Text(L10n.none)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(.zero)
-            }
-        }
-        .listStyle(.plain)
-        .environment(\.editMode, isReordering ? .constant(.active) : .constant(.inactive))
-    }
+    // MARK: - Body
 
     var body: some View {
         contentView
-            .navigationTitle(viewModel.editor.displayTitle)
-            .toolbarTitleDisplayMode(.inline)
+            .navigationTitle(type.displayTitle)
+            .navigationBarTitleDisplayMode(.inline)
             .navigationBarBackButtonHidden(isEditing || isReordering)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -114,63 +61,42 @@ struct EditItemElementView<Editor: ItemComponentEditor>: View {
                         navigationBarSelectView
                     }
                 }
-
                 ToolbarItem(placement: .topBarTrailing) {
                     if isEditing || isReordering {
-                        Button(L10n.cancel, role: .cancel) {
+                        Button(L10n.cancel) {
                             if isEditing {
                                 isEditing.toggle()
                             }
 
                             if isReordering {
-                                elements = viewModel.editor.elements(in: viewModel.item)
+                                elements = type.getElement(for: viewModel.item)
                                 isReordering.toggle()
                             }
 
                             UIDevice.impact(.light)
                             selectedElements.removeAll()
                         }
-                        .foregroundStyle(.primary, .secondary)
-                        .if(true) { view in
-                            if #available(iOS 26.0, *) {
-                                view
-                            } else {
-                                view
-                                    .backport
-                                    .buttonStyle(.glass)
-                            }
-                        }
-                        .controlSize(.small)
+                        .buttonStyle(.toolbarPill)
+                        .foregroundStyle(accentColor)
                     }
                 }
-
                 ToolbarItem(placement: .bottomBar) {
                     if isEditing {
-                        Button(L10n.delete, role: .destructive) {
+                        Button(L10n.delete) {
                             isPresentingDeletionConfirmation = true
                         }
-                        .backport
-                        .buttonStyle(.glassProminent)
+                        .buttonStyle(.toolbarPill(.red))
                         .disabled(selectedElements.isEmpty)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                     }
 
                     if isReordering {
-                        let saveAction: () -> Void = {
+                        Button(L10n.save) {
                             viewModel.reorder(elements)
                             isReordering = false
                         }
-
-                        Group {
-                            if #available(iOS 26, *) {
-                                Button(L10n.save, role: .confirm, action: saveAction)
-                            } else {
-                                Button(L10n.save, action: saveAction)
-                                    .backport
-                                    .buttonStyle(.glassProminent)
-                                    .controlSize(.small)
-                            }
-                        }
-                        .disabled(viewModel.editor.elements(in: viewModel.item) == elements)
+                        .buttonStyle(.toolbarPill)
+                        .disabled(type.getElement(for: viewModel.item) == elements)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                     }
                 }
@@ -180,7 +106,7 @@ struct EditItemElementView<Editor: ItemComponentEditor>: View {
                 isHidden: isEditing || isReordering
             ) {
                 Button(L10n.add, systemImage: "plus") {
-                    router.route(to: .addItemElement(viewModel: viewModel))
+                    route(router.router, viewModel)
                 }
 
                 if elements.isNotEmpty == true {
@@ -194,12 +120,13 @@ struct EditItemElementView<Editor: ItemComponentEditor>: View {
                 }
             }
             .onNotification(.itemMetadataDidChange) { _ in
-                elements = viewModel.editor.elements(in: viewModel.item)
+                elements = type.getElement(for: viewModel.item)
             }
             .onReceive(viewModel.events) { event in
                 switch event {
+                case .deleted, .metadataRefreshStarted:
+                    break
                 case .updated:
-                    elements = viewModel.editor.elements(in: viewModel.item)
                     UIDevice.feedback(.success)
                 }
             }
@@ -220,5 +147,61 @@ struct EditItemElementView<Editor: ItemComponentEditor>: View {
                 Text(L10n.deleteSelectedConfirmation)
             }
             .errorMessage($viewModel.error)
+    }
+
+    // MARK: - Select/Remove All Button
+
+    @ViewBuilder
+    private var navigationBarSelectView: some View {
+        let isAllSelected = selectedElements.count == (elements.count)
+        Button(isAllSelected ? L10n.removeAll : L10n.selectAll) {
+            selectedElements = isAllSelected ? [] : Set(elements)
+        }
+        .buttonStyle(.toolbarPill)
+        .disabled(!isEditing)
+        .foregroundStyle(accentColor)
+    }
+
+    // MARK: - Content View
+
+    private var contentView: some View {
+        List {
+            InsetGroupedListHeader(type.displayTitle, description: type.description)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .padding(.vertical, 24)
+
+            if elements.isNotEmpty {
+                ForEach(elements, id: \.self) { element in
+                    EditItemElementRow(
+                        item: element,
+                        type: type,
+                        action: {
+                            if isEditing {
+                                selectedElements.toggle(value: element)
+                            }
+                        },
+                        onDelete: {
+                            selectedElements.toggle(value: element)
+                            isPresentingDeletionConfirmation = true
+                        }
+                    )
+                    .isEditing(isEditing)
+                    .isSelected(selectedElements.contains(element))
+                    .listRowInsets(.edgeInsets)
+                }
+                .onMove { source, destination in
+                    guard isReordering else { return }
+                    elements.move(fromOffsets: source, toOffset: destination)
+                }
+            } else {
+                Text(L10n.none)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(.zero)
+            }
+        }
+        .listStyle(.plain)
+        .environment(\.editMode, isReordering ? .constant(.active) : .constant(.inactive))
     }
 }

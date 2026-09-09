@@ -9,6 +9,7 @@
 import Defaults
 import PreferencesView
 import SwiftUI
+import VLCUI
 
 // TODO: protect against holding down
 

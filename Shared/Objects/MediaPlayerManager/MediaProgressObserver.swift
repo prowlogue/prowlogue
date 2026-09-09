@@ -36,7 +36,9 @@ class MediaProgressObserver: ViewModel, MediaPlayerObserver {
     }
 
     private func sendReport() {
-        guard let item else { return }
+        // External (custom IPTV) items aren't server items (empty `playSessionID`) — never send them to
+        // `/Sessions/Playing` (it'd 400 / create a phantom now-playing). Server items always have a session.
+        guard let item, item.playSessionID.isNotEmpty else { return }
 
         switch lastPlaybackRequestStatus {
         case .playing:
@@ -71,22 +73,41 @@ class MediaProgressObserver: ViewModel, MediaPlayerObserver {
             .sink { [weak self] in self?.playbackRequestStatusDidChange($0) }
             .store(in: &cancellables)
 
+        // Upstream (Swiftfin #2057): end the session cleanly if the app is terminated mid-playback, so the
+        // server isn't left with a running transcode / open stream until its own inactivity timeout.
         Notifications[.applicationWillTerminate]
             .publisher
             .sink { [weak self] _ in self?.endPlaybackSession() }
             .store(in: &cancellables)
     }
 
+    /// Single teardown path for every "playback is ending" case (item change, stop, app terminate): report
+    /// stop, then close the opened live stream so the IPTV tuner is freed (Prowlogue — see
+    /// `closeLiveStreamIfNeeded`). Consolidated per upstream #2057.
+    ///
+    /// - Note: there used to be a third step here, an explicit `Paths.stopEncodingProcess` call to kill the
+    /// server's encoder (upstream #2057's `stopEncoding`). That endpoint was **removed from the Jellyfin 12.0
+    /// API surface**, and it turns out to have been redundant all along: `POST /Sessions/Playing/Stopped` —
+    /// the `sendStopReport` below — already runs `TranscodingJobHelper.KillTranscodingJob` server-side, so
+    /// the transcode is torn down by the stop report alone. The extra call was in fact a *second* kill pass
+    /// over an already-disposed job, which is a known source of server-side `ObjectDisposedException`s
+    /// (jellyfin#6141). Removing it is a net improvement, not a regression.
     private func endPlaybackSession() {
         guard let item else { return }
-        sendStopReport(for: item, seconds: manager?.seconds)
+        // Skip the server stop report for external (session-less) items; the cleanup below self-guards.
+        if item.playSessionID.isNotEmpty {
+            sendStopReport(for: item, seconds: manager?.seconds)
+        }
+        closeLiveStreamIfNeeded(for: item)
     }
 
     private func playbackItemDidChange(_ newItem: MediaPlayerItem?) {
         timer.poke()
 
         if let item, newItem !== item {
+            // Stop report + live-stream close for the OUTGOING item (see endPlaybackSession).
             endPlaybackSession()
+
             self.item = newItem
             self.hasSentStart = false
             sendReport()
@@ -103,11 +124,30 @@ class MediaProgressObserver: ViewModel, MediaPlayerObserver {
     private func didReceive(action: MediaPlayerManager._Action) {
         switch action {
         case .stop:
+            // Stop report + live-stream/tuner close (see endPlaybackSession). Freeing the
+            // live stream the moment the player closes is the app's job — the server otherwise only times it
+            // out minutes later, blocking a one-stream-per-account IPTV provider from tuning another channel.
             endPlaybackSession()
             timer.stop()
             cancellables = []
             item = nil
         default: ()
+        }
+    }
+
+    /// Closes the server-side live stream opened for this item (Live TV channels, and any source the server
+    /// opened via `isAutoOpenLiveStream`). Best-effort and OUTSIDE the debug progress-report gate — this is
+    /// resource cleanup, not telemetry, so it must run even when progress reporting is disabled.
+    private func closeLiveStreamIfNeeded(for item: MediaPlayerItem) {
+        guard let liveStreamID = item.mediaSource.liveStreamID, liveStreamID.isNotEmpty else { return }
+
+        Task {
+            do {
+                try await send(Paths.closeLiveStream(liveStreamID: liveStreamID))
+            } catch {
+                // Best-effort: if the close fails (network drop, already closed), the server's inactivity
+                // timeout will eventually reclaim the stream.
+            }
         }
     }
 
@@ -152,6 +192,14 @@ class MediaProgressObserver: ViewModel, MediaPlayerObserver {
 
             let request = Paths.reportPlaybackStopped(info)
             try await send(request)
+
+            // Tell any open item detail page (and the home rows) to reload this item from the server, so
+            // the play button flips to "Resume" and progress shows immediately after watching — instead
+            // of staying stale until the app is relaunched. The view models listen for this and do a
+            // non-disruptive background refresh.
+            if let itemID = item.baseItem.id {
+                Notifications[.itemShouldRefreshMetadata].post(itemID)
+            }
         }
     }
 

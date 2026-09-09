@@ -26,7 +26,7 @@ extension VideoPlayer.UIVideoPlayerContainerViewController {
             containerState.timer.stop()
         }
 
-        if state == .ended || state == .cancelled || state == .failed {
+        if state == .ended {
             containerState.timer.poke()
         }
 
@@ -90,7 +90,7 @@ extension VideoPlayer.UIVideoPlayerContainerViewController {
             )
         }
 
-        guard state != .ended, state != .cancelled, state != .failed else {
+        guard state != .ended else {
             containerState.panHandlingAction = nil
             return
         }
@@ -244,10 +244,7 @@ extension VideoPlayer.UIVideoPlayerContainerViewController {
                 containerState.scrubbedSeconds.value
             }
         ) { startState, handlingState, containerState in
-            if handlingState.gestureState == .ended ||
-                handlingState.gestureState == .cancelled ||
-                handlingState.gestureState == .failed
-            {
+            if handlingState.gestureState == .ended {
                 containerState.isScrubbing = false
 
                 if !startState.startedWithOverlay {

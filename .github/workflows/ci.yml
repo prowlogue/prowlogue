@@ -18,13 +18,13 @@ jobs:
     strategy:
       matrix:
         scheme:
-          - "Swiftfin"
-          - "Swiftfin tvOS"
+          - "Prowlogue"
+          - "Prowlogue tvOS"
 
-    runs-on: macos-26
+    runs-on: macos-15
 
     env:
-      XCODE_VERSION: "26.6"
+      XCODE_VERSION: "26.3"
 
     steps:
       - name: Checkout
@@ -38,6 +38,17 @@ jobs:
 
       - name: Install Homebrew dependencies
         run: brew bundle --file Brewfile
+
+      - name: Cache Carthage
+        uses: actions/cache@v4
+        id: carthage-cache
+        with:
+          path: Carthage
+          key: ${{ runner.os }}-carthage-${{ hashFiles('**/Cartfile.resolved') }}
+          restore-keys: ${{ runner.os }}-carthage-
+
+      - name: Update Carthage
+        run: carthage update --use-xcframeworks --cache-builds
 
       # FIXME: caches would keep failed compiles?
 

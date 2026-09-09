@@ -6,6 +6,7 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
+import Defaults
 import JellyfinAPI
 import SwiftUI
 
@@ -46,6 +47,7 @@ struct ServerUserLiveTVAccessView: View {
                 )
             }
         }
+        .backport
         .toolbarTitleDisplayMode(.inline)
         .navigationTitle(L10n.liveTVAccessCapitalized)
         .navigationBarCloseButton {
@@ -58,22 +60,12 @@ struct ServerUserLiveTVAccessView: View {
             if viewModel.background.is(.updating) {
                 ProgressView()
             }
-            let saveAction: () -> Void = {
+            Button(L10n.save) {
                 if tempPolicy != viewModel.user.policy {
                     viewModel.updatePolicy(tempPolicy)
                 }
             }
-
-            Group {
-                if #available(iOS 26, *) {
-                    Button(L10n.save, role: .confirm, action: saveAction)
-                } else {
-                    Button(L10n.save, action: saveAction)
-                        .backport
-                        .buttonStyle(.glassProminent)
-                        .controlSize(.small)
-                }
-            }
+            .buttonStyle(.toolbarPill)
             .disabled(viewModel.user.policy == tempPolicy)
         }
         .onReceive(viewModel.events) { event in

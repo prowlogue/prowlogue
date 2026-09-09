@@ -1,0 +1,338 @@
+//
+// Swiftfin is subject to the terms of the Mozilla Public
+// License, v2.0. If a copy of the MPL was not distributed with this
+// file, you can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// Copyright (c) 2026 Jellyfin & Jellyfin Contributors
+//
+
+import Foundation
+import JellyfinAPI
+
+extension VideoPlayerType {
+
+    // MARK: - Direct Play
+
+    @ArrayBuilder<DirectPlayProfile>
+    static var _swiftfinDirectPlayProfiles: [DirectPlayProfile] {
+        DirectPlayProfile(type: .video) {
+            AudioCodec.aac
+            AudioCodec.ac3
+            AudioCodec.alac
+            AudioCodec.amr_nb
+            AudioCodec.amr_wb
+            AudioCodec.dts
+            AudioCodec.eac3
+            AudioCodec.flac
+            AudioCodec.mp1
+            AudioCodec.mp2
+            AudioCodec.mp3
+            AudioCodec.nellymoser
+            AudioCodec.opus
+            AudioCodec.pcm_alaw
+            AudioCodec.pcm_bluray
+            AudioCodec.pcm_dvd
+            AudioCodec.pcm_mulaw
+            AudioCodec.pcm_s16be
+            AudioCodec.pcm_s16le
+            AudioCodec.pcm_s24be
+            AudioCodec.pcm_s24le
+            AudioCodec.pcm_u8
+            AudioCodec.speex
+            AudioCodec.vorbis
+            AudioCodec.wavpack
+            AudioCodec.wmalossless
+            AudioCodec.wmapro
+            AudioCodec.wmav1
+            AudioCodec.wmav2
+        } videoCodecs: {
+
+            /// This is possible with non-AV1 supported devices but the FPS is terrible on some devices
+            ///  - Defaulting to disabled but can be enabled in custom profiles if desired.
+            if PlaybackCapabilities.supportsAV1 {
+                VideoCodec.av1
+            }
+
+            VideoCodec.dirac
+            VideoCodec.dv
+            VideoCodec.ffv1
+            VideoCodec.flv1
+            VideoCodec.h261
+            VideoCodec.h263
+            VideoCodec.h264
+            VideoCodec.hevc
+            VideoCodec.mjpeg
+            VideoCodec.mpeg1video
+            VideoCodec.mpeg2video
+            VideoCodec.mpeg4
+            VideoCodec.msmpeg4v1
+            VideoCodec.msmpeg4v2
+            VideoCodec.msmpeg4v3
+            VideoCodec.prores
+            VideoCodec.theora
+            VideoCodec.vc1
+            VideoCodec.vp8
+            VideoCodec.vp9
+            VideoCodec.wmv1
+            VideoCodec.wmv2
+            VideoCodec.wmv3
+        }
+    }
+
+    // MARK: - Transcoding
+
+    @ArrayBuilder<TranscodingProfile>
+    static var _swiftfinTranscodingProfiles: [TranscodingProfile] {
+        TranscodingProfile(
+            isBreakOnNonKeyFrames: true,
+            context: .streaming,
+            maxAudioChannels: "8",
+            minSegments: 2,
+            protocol: MediaStreamProtocol.hls,
+            type: .video
+        ) {
+            AudioCodec.aac
+            AudioCodec.ac3
+            AudioCodec.alac
+            AudioCodec.dts
+            AudioCodec.eac3
+            AudioCodec.flac
+            AudioCodec.mp1
+            AudioCodec.mp2
+            AudioCodec.mp3
+            AudioCodec.opus
+            AudioCodec.vorbis
+        } videoCodecs: {
+
+            /// - Note: Transcode Profiles prioritizes codecs by order
+            /// This is possible with non-AV1 supported devices but the FPS is terrible on some devices
+            ///  - Defaulting to disabled but can be enabled in custom profiles if desired.
+            if PlaybackCapabilities.supportsAV1 {
+                VideoCodec.av1
+            }
+
+            VideoCodec.h263
+            VideoCodec.h264
+            VideoCodec.hevc
+            VideoCodec.mjpeg
+            VideoCodec.mpeg1video
+            VideoCodec.mpeg2video
+            VideoCodec.mpeg4
+            VideoCodec.vp9
+        } containers: {
+            MediaContainer.mp4
+        }
+
+        /// Upstream (Swiftfin #2125): VC1 needs its OWN transcoding profile so it can Direct Stream.
+        /// Listed alongside the other codecs above it hits the server's HLS video-codec restriction in
+        /// `StreamBuilder._supportedHlsVideoCodecs` and gets fully re-encoded; in a profile of its own the
+        /// server container-copies it instead.
+        TranscodingProfile(
+            isBreakOnNonKeyFrames: true,
+            context: .streaming,
+            maxAudioChannels: "8",
+            minSegments: 2,
+            protocol: MediaStreamProtocol.hls,
+            type: .video
+        ) {
+            AudioCodec.aac
+            AudioCodec.ac3
+            AudioCodec.alac
+            AudioCodec.dts
+            AudioCodec.eac3
+            AudioCodec.flac
+            AudioCodec.mp1
+            AudioCodec.mp2
+            AudioCodec.mp3
+            AudioCodec.opus
+            AudioCodec.vorbis
+        } videoCodecs: {
+            VideoCodec.vc1
+        } containers: {
+            MediaContainer.mp4
+        }
+    }
+
+    // MARK: - Subtitle
+
+    @ArrayBuilder<SubtitleProfile>
+    static var _swiftfinSubtitleProfiles: [SubtitleProfile] {
+        SubtitleProfile.build(method: .embed) {
+            SubtitleFormat.ass
+            SubtitleFormat.cc_dec
+            SubtitleFormat.dvbsub
+            SubtitleFormat.dvdsub
+            SubtitleFormat.libzvbi_teletextdec
+            SubtitleFormat.mov_text
+            SubtitleFormat.mpl2
+            SubtitleFormat.pgssub
+            SubtitleFormat.pjs
+            SubtitleFormat.realtext
+            SubtitleFormat.sami
+            SubtitleFormat.ssa
+            SubtitleFormat.subrip
+            SubtitleFormat.subviewer
+            SubtitleFormat.subviewer1
+            SubtitleFormat.text
+            SubtitleFormat.ttml
+            SubtitleFormat.vplayer
+            SubtitleFormat.vtt
+            SubtitleFormat.xsub
+        }
+
+        /// Upstream (Swiftfin #2162): the server converts an unmatched TEXT subtitle to the FIRST format in
+        /// this list, so `subrip` must lead — it's the one VLC reliably renders. `vtt` is deliberately absent
+        /// (it moved to `.encode` below): delivered externally it silently failed to appear.
+        SubtitleProfile.build(method: .external) {
+            SubtitleFormat.subrip
+            SubtitleFormat.ass
+            SubtitleFormat.libzvbi_teletextdec
+            SubtitleFormat.mpl2
+            SubtitleFormat.pjs
+            SubtitleFormat.realtext
+            SubtitleFormat.sami
+            SubtitleFormat.ssa
+            SubtitleFormat.subviewer
+            SubtitleFormat.subviewer1
+            SubtitleFormat.text
+            SubtitleFormat.ttml
+            SubtitleFormat.vplayer
+        }
+
+        SubtitleProfile.build(method: .encode) {
+            SubtitleFormat.dvbsub
+            SubtitleFormat.dvdsub
+            SubtitleFormat.pgssub
+            SubtitleFormat.vtt
+            SubtitleFormat.xsub
+        }
+    }
+
+    // MARK: - Codec Profiles
+
+    @ArrayBuilder<CodecProfile>
+    static var _swiftfinCodecProfiles: [CodecProfile] {
+        CodecProfile(
+            codec: VideoCodec.h264.rawValue,
+            type: .video,
+            conditions: {
+                _h264BaseConditions
+                ProfileCondition(
+                    condition: .equalsAny,
+                    isRequired: true,
+                    property: .videoRangeType
+                ) {
+                    VideoRangeType.sdr
+                    VideoRangeType.doviWithSDR
+                }
+            }
+        )
+
+        CodecProfile(
+            codec: VideoCodec.hevc.rawValue,
+            type: .video,
+            conditions: {
+                ProfileCondition(
+                    condition: .notEquals,
+                    isRequired: false,
+                    property: .isAnamorphic,
+                    value: "true"
+                )
+                ProfileCondition(
+                    condition: .equalsAny,
+                    isRequired: false,
+                    property: .videoProfile
+                ) {
+                    HEVCProfile.main
+                    HEVCProfile.main10
+                }
+                ProfileCondition(
+                    condition: .notEquals,
+                    isRequired: false,
+                    property: .isInterlaced,
+                    value: "true"
+                )
+                ProfileCondition(
+                    condition: .equalsAny,
+                    isRequired: true,
+                    property: .videoRangeType
+                ) {
+                    swiftfinHDRProfiles
+                }
+            }
+        )
+
+        CodecProfile(
+            codec: VideoCodec.av1.rawValue,
+            type: .video,
+            conditions: {
+                ProfileCondition(
+                    condition: .notEquals,
+                    isRequired: false,
+                    property: .isAnamorphic,
+                    value: "true"
+                )
+                ProfileCondition(
+                    condition: .notEquals,
+                    isRequired: false,
+                    property: .isInterlaced,
+                    value: "true"
+                )
+                ProfileCondition(
+                    condition: .equalsAny,
+                    isRequired: true,
+                    property: .videoRangeType
+                ) {
+                    swiftfinHDRProfiles
+                }
+            }
+        )
+
+        CodecProfile(
+            codec: VideoCodec.vp9.rawValue,
+            type: .video,
+            conditions: {
+                ProfileCondition(
+                    condition: .notEquals,
+                    isRequired: false,
+                    property: .isAnamorphic,
+                    value: "true"
+                )
+                ProfileCondition(
+                    condition: .notEquals,
+                    isRequired: false,
+                    property: .isInterlaced,
+                    value: "true"
+                )
+                ProfileCondition(
+                    condition: .equalsAny,
+                    isRequired: true,
+                    property: .videoRangeType
+                ) {
+                    swiftfinHDRProfiles
+                }
+            }
+        )
+    }
+
+    @ArrayBuilder<VideoRangeType>
+    private static var swiftfinHDRProfiles: [VideoRangeType] {
+
+        VideoRangeType.sdr
+        VideoRangeType.doviWithSDR
+
+        if PlaybackCapabilities.hdrEnabled {
+            VideoRangeType.hlg
+            VideoRangeType.hdr10
+            VideoRangeType.hdr10Plus
+            VideoRangeType.doviWithHLG
+            VideoRangeType.doviWithHDR10
+            VideoRangeType.doviWithHDR10Plus
+            /// Upstream (Swiftfin #2134): Dolby Vision Profile 7 (dual-layer). VLC decodes the HEVC base
+            /// layer in software and ignores the enhancement layer, so claiming support keeps the MKV on the
+            /// Direct Play path instead of having the server strip the DV layer and remux.
+            VideoRangeType.doviWithEL
+            VideoRangeType.doviWithELHDR10Plus
+        }
+    }
+}

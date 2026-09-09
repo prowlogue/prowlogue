@@ -30,6 +30,28 @@ struct LearnMoreLabeledContentStyle: LabeledContentStyle {
     }
 }
 
+extension LabeledContentStyle where Self == ItemAttributeLabeledContentStyle {
+
+    static var itemAttribute: ItemAttributeLabeledContentStyle {
+        ItemAttributeLabeledContentStyle()
+    }
+}
+
+struct ItemAttributeLabeledContentStyle: LabeledContentStyle {
+
+    func makeBody(configuration: Configuration) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            configuration.label
+                .font(.headline)
+                .foregroundStyle(.primary)
+
+            configuration.content
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
 extension LabeledContentStyle where Self == DeviceProfileLabeledContentStyle {
 
     static var deviceProfile: DeviceProfileLabeledContentStyle {
@@ -89,6 +111,7 @@ struct PlaybackInfoLabeledContentStyle: LabeledContentStyle {
                     RoundedRectangle(cornerRadius: 8)
                         .fill(isFocused ? Color.white.opacity(0.15) : Color.clear)
                 )
+                .backport
                 .focusable()
                 .focused($isFocused)
                 .animation(.easeInOut(duration: 0.15), value: isFocused)

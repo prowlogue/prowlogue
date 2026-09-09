@@ -40,7 +40,10 @@ extension VideoPlayer.PlaybackControls {
         @Toaster
         private var toaster: ToastProxy
 
-        private let previewImageHeight: CGFloat = 200
+        // Trickplay scrub-preview height (width scales with the video aspect ratio + the x/y offsets below
+        // derive from this, so changing it scales the whole preview). 300 = 1.5× the stock 200 (2× read too
+        // big); the tiles are a fixed server resolution so they upscale slightly.
+        private let previewImageHeight: CGFloat = 300
 
         private var sliderHeight: CGFloat {
             isScrubbing ? 20 : 14
@@ -56,27 +59,20 @@ extension VideoPlayer.PlaybackControls {
         }
 
         private var scrubbedProgress: Double {
-            guard let runtime = manager.item.runtime, runtime > .zero else { return 0 }
-
-            let progress = scrubbedSecondsBox.value / runtime
-            guard progress.isFinite else { return 0 }
-
-            return clamp(progress, min: 0, max: 1)
+            guard let runtime = manager.playbackRuntime, runtime > .zero else { return 0 }
+            return scrubbedSecondsBox.value / runtime
         }
 
         private var currentProgress: Double? {
             guard isScrubbing,
-                  let runtime = manager.item.runtime,
+                  let runtime = manager.playbackRuntime,
                   runtime > .zero
             else {
                 return nil
             }
 
             let currentSeconds = containerState.scrubOriginSeconds ?? manager.seconds
-            let progress = (currentSeconds / runtime) * 100
-            guard progress.isFinite else { return nil }
-
-            return clamp(progress, min: 0, max: 100)
+            return clamp((currentSeconds / runtime) * 100, min: 0, max: 100)
         }
 
         private var videoSizeAspectRatio: CGFloat {
@@ -84,27 +80,13 @@ extension VideoPlayer.PlaybackControls {
                 return 1.77
             }
 
-            let videoSize = videoPlayerProxy.videoSize.value
-            guard videoSize.width.isFinite,
-                  videoSize.height.isFinite,
-                  videoSize.width > 0,
-                  videoSize.height > 0
-            else {
-                return 1.77
-            }
-
-            let aspectRatio = videoSize.aspectRatio
-            guard aspectRatio.isFinite else { return 1.77 }
-
-            return clamp(aspectRatio, min: 0.25, max: 4)
+            return clamp(videoPlayerProxy.videoSize.value.aspectRatio, min: 0.25, max: 4)
         }
 
         private var previewXOffset: CGFloat {
-            guard sliderSize.width.isFinite, sliderSize.width > 0 else { return 0 }
-
             let videoWidth = previewImageHeight * videoSizeAspectRatio
             let p = (sliderSize.width * scrubbedProgress) - (videoWidth / 2)
-            return clamp(p, min: 0, max: max(0, sliderSize.width - videoWidth))
+            return clamp(p, min: 0, max: sliderSize.width - videoWidth)
         }
 
         @ViewBuilder
@@ -126,22 +108,14 @@ extension VideoPlayer.PlaybackControls {
             VideoPlayerSlider(
                 value: $scrubbedSecondsBox.value.map(
                     getter: {
-                        guard let runtime = manager.item.runtime, runtime > .zero else { return 0 }
-
-                        let seconds = $0.seconds
-                        let runtimeSeconds = runtime.seconds
-                        guard seconds.isFinite, runtimeSeconds.isFinite, runtimeSeconds > 0 else { return 0 }
-
-                        return clamp((seconds / runtimeSeconds) * 100, min: 0, max: 100)
+                        guard let runtime = manager.playbackRuntime, runtime > .zero else { return 0 }
+                        return clamp(($0.seconds / runtime.seconds) * 100, min: 0, max: 100)
                     },
-                    setter: {
-                        guard $0.isFinite else { return .zero }
-                        return (manager.item.runtime ?? .zero) * (clamp($0, min: 0, max: 100) / 100)
-                    }
+                    setter: { (manager.playbackRuntime ?? .zero) * ($0 / 100) }
                 ),
                 currentProgress: currentProgress,
                 total: 100,
-                isScrollingEnabled: manager.playbackRequestStatus == .paused && manager.state != .loadingItem
+                isScrollingEnabled: manager.playbackRequestStatus == .paused
             )
             .onEditingChanged { isEditing in
                 if isEditing {
@@ -152,8 +126,16 @@ extension VideoPlayer.PlaybackControls {
                 }
             }
             .if(chapterSlider) { view in
-                if let chapters = manager.item.fullChapterInfo, chapters.isNotEmpty {
-                    view.inverseMask { ChapterTrackMask(chapters: chapters, runtime: manager.item.runtime ?? .zero) }
+                // Read the chapter info RESOLVED ONCE on `MediaPlayerItem` — `BaseItemDto.fullChapterInfo`
+                // rebuilds every chapter image URL on each access, and this body re-evaluates every
+                // playback tick. The id guard keeps the brief between-items transition from masking
+                // the slider with the previous item's chapters.
+                if let playbackItem = manager.playbackItem,
+                   playbackItem.baseItem.id == manager.item.id,
+                   let chapters = playbackItem.fullChapterInfo,
+                   chapters.isNotEmpty
+                {
+                    view.inverseMask { ChapterTrackMask(chapters: chapters, runtime: manager.playbackRuntime ?? .zero) }
                 } else {
                     view
                 }
@@ -161,6 +143,7 @@ extension VideoPlayer.PlaybackControls {
             .frame(height: sliderHeight)
             .trackingSize($sliderSize)
             .foregroundStyle(manager.state == .loadingItem ? .gray : .primary)
+            .disabled(manager.state == .loadingItem)
         }
 
         @ViewBuilder
@@ -193,11 +176,11 @@ extension VideoPlayer.PlaybackControls {
             .overlay(alignment: .topLeading) {
                 previewImage
             }
-            .onChange(of: isFocused) {
-                containerState.isProgressBarFocused = isFocused
+            .onChange(of: isFocused) { _, newValue in
+                containerState.isProgressBarFocused = newValue
             }
-            .onChange(of: containerState.isProgressBarFocused) {
-                if containerState.isProgressBarFocused, !isFocused {
+            .onChange(of: containerState.isProgressBarFocused) { _, newValue in
+                if newValue, !isFocused {
                     isFocused = true
                 }
             }

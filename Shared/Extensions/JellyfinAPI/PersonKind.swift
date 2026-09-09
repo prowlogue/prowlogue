@@ -62,6 +62,7 @@ extension PersonKind: Displayable, SupportedCaseIterable {
             L10n.editor
         case .translator:
             L10n.translator
+        /// Added by the Jellyfin 12.0 API surface (SDK 3.x) alongside books & audiobooks support.
         case .narrator:
             L10n.narrator
         }

@@ -9,7 +9,7 @@
 import Foundation
 import JellyfinAPI
 
-extension DayOfWeek: Displayable {
+extension DayOfWeek {
 
     // swiftlint:disable:next hard_coded_display_string
     var displayTitle: String {

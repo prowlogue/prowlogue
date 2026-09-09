@@ -7,7 +7,7 @@
 //
 
 import Defaults
-import FactoryKit
+import Factory
 import Foundation
 import JellyfinAPI
 
@@ -78,7 +78,7 @@ extension StoredValues.Keys {
         static var users: Key<[UserState]> {
             Key(
                 "users",
-                ownerID: "swiftfinApp",
+                ownerID: "prowlogueApp",
                 field: "users",
                 storage: .sql,
                 default: []
@@ -112,11 +112,27 @@ extension StoredValues.Keys {
             )
         }
 
-        static func libraryStyle(id: String?) -> Key<LibraryStyle> {
+        static func libraryDisplayType(parentID: String?) -> Key<LibraryDisplayType> {
             CurrentUserKey(
-                id,
-                field: "setting-libraryStyle",
-                default: .default
+                parentID,
+                field: "setting-libraryDisplayType",
+                default: Defaults[.Customization.Library.displayType]
+            )
+        }
+
+        static func libraryListColumnCount(parentID: String?) -> Key<Int> {
+            CurrentUserKey(
+                parentID,
+                field: "setting-libraryListColumnCount",
+                default: Defaults[.Customization.Library.listColumnCount]
+            )
+        }
+
+        static func libraryPosterType(parentID: String?) -> Key<PosterDisplayType> {
+            CurrentUserKey(
+                parentID,
+                field: "setting-libraryPosterType",
+                default: Defaults[.Customization.Library.posterType]
             )
         }
 
@@ -143,6 +159,27 @@ extension StoredValues.Keys {
             CurrentUserKey(
                 field: "customDeviceProfiles",
                 default: []
+            )
+        }
+
+        static var enableItemEditing: Key<Bool> {
+            CurrentUserKey(
+                field: "enableItemEditing",
+                default: false
+            )
+        }
+
+        static var enableItemDeletion: Key<Bool> {
+            CurrentUserKey(
+                field: "enableItemDeletion",
+                default: false
+            )
+        }
+
+        static var enableCollectionManagement: Key<Bool> {
+            CurrentUserKey(
+                field: "enableCollectionManagement",
+                default: false
             )
         }
 
@@ -177,13 +214,6 @@ extension StoredValues.Keys {
         static var forceHDRTranscode: Key<Bool> {
             CurrentUserKey(
                 field: "forceHDRTranscode",
-                default: false
-            )
-        }
-
-        static var forceSubtitleBurnIn: Key<Bool> {
-            CurrentUserKey(
-                field: "forceSubtitleBurnIn",
                 default: false
             )
         }

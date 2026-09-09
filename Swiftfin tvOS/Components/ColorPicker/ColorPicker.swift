@@ -6,6 +6,7 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
+import Engine
 import SwiftUI
 
 struct ColorPicker: View {
@@ -34,16 +35,14 @@ struct ColorPicker: View {
                 Text(title)
             }
         }
+        // Native `.sheet` now that the app-wide modal-button bug is fixed (was the custom `._alert`, which
+        // hosted this rich color editor that native `.alert` can't). Commit still happens in `.onDisappear`.
         .sheet(isPresented: $isPresented) {
             StateAdapter(initialValue: selection.wrappedValue) { color in
-                Self.Sheet(
-                    title: title,
-                    value: color,
-                    supportsOpacity: supportsOpacity
-                )
-                .onDisappear {
-                    selection.wrappedValue = color.wrappedValue
-                }
+                Self._Alert(value: color)
+                    .onDisappear {
+                        selection.wrappedValue = color.wrappedValue
+                    }
             }
         }
     }

@@ -7,7 +7,7 @@
 //
 
 import CoreStore
-import FactoryKit
+import Factory
 import Foundation
 import JellyfinAPI
 import KeychainSwift
@@ -20,6 +20,47 @@ extension SwiftfinStore.State {
         let id: String
         let serverID: String
         let username: String
+    }
+}
+
+/// Session cache for the decoded `UserDto`: the stored value lives in `UserDefaults` as JSON, so every
+/// read of `UserState.data` (the play-permission checks in item headers, auto-play, hide-played) paid a
+/// full `UserDto` decode — dozens of times per detail-page load. Decode once per user, write-through on
+/// set. Keyed by user id, so a user/server switch can never serve another user's data, and every app
+/// write flows through `UserState.data`'s setter (the only accessor for the underlying stored value).
+/// Lock-protected because `data` is also read from non-main contexts (e.g. the media player build path).
+private enum UserDtoSessionCache {
+
+    private static let lock = NSLock()
+    private static var cache: [String: UserDto] = [:]
+
+    static func get(id: String, compute: () -> UserDto) -> UserDto {
+        lock.lock()
+        if let cached = cache[id] {
+            lock.unlock()
+            return cached
+        }
+        lock.unlock()
+
+        // Compute OUTSIDE the lock: the decode is slow and `compute` may reenter Defaults machinery.
+        let value = compute()
+
+        lock.lock()
+        cache[id] = value
+        lock.unlock()
+        return value
+    }
+
+    static func set(id: String, _ value: UserDto) {
+        lock.lock()
+        cache[id] = value
+        lock.unlock()
+    }
+
+    static func remove(id: String) {
+        lock.lock()
+        cache[id] = nil
+        lock.unlock()
     }
 }
 
@@ -43,10 +84,11 @@ extension UserState {
 
     var data: UserDto {
         get {
-            StoredValues[.User.data(id: id)]
+            UserDtoSessionCache.get(id: id) { StoredValues[.User.data(id: id)] }
         }
         nonmutating set {
             StoredValues[.User.data(id: id)] = newValue
+            UserDtoSessionCache.set(id: id, newValue)
         }
     }
 
@@ -117,6 +159,9 @@ extension UserState {
     func deleteSettings() throws {
         try AnyStoredData.deleteAll(ownerID: id)
         UserDefaults.userSuite(id: id).removeAll()
+        // The stored values were wiped without going through the `data` setter — drop the cached copy
+        // so a re-registered user with the same id can never see the deleted account's data.
+        UserDtoSessionCache.remove(id: id)
     }
 
     /// Must pass the server to create a JellyfinClient
@@ -134,36 +179,17 @@ extension UserState {
         return response.value
     }
 
-    @MainActor
-    func updateUserData(server: ServerState) async throws {
-        let users = StoredValues[.User.users]
-        guard let currentUser = users.first(where: { $0.id == id }) else { return }
-
-        let userData = try await getUserData(server: server)
-        let updatedUsername = userData.name ?? currentUser.username
-
-        let updatedUser = UserState(
-            id: currentUser.id,
-            serverID: currentUser.serverID,
-            username: updatedUsername
-        )
-
-        StoredValues[.User.users] = users.map { $0.id == id ? updatedUser : $0 }
-        StoredValues[.User.data(id: currentUser.id)] = userData
-    }
-
+    // we will always crop to a square, so just use width
     func profileImageSource(
         client: JellyfinClient
     ) -> ImageSource {
-        ImageSource(
-            url: client.url(
-                with: Paths.getUserImage(
-                    parameters: Paths.GetUserImageParameters(
-                        userID: id,
-                        tag: data.primaryImageTag
-                    )
-                )
-            )
+        let parameters = Paths.GetUserImageParameters(
+            userID: id
         )
+        let request = Paths.getUserImage(parameters: parameters)
+
+        let profileImageURL = client.url(with: request)
+
+        return ImageSource(url: profileImageURL)
     }
 }

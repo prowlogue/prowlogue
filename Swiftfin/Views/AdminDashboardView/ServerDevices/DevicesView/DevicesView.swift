@@ -6,6 +6,7 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
+import Defaults
 import JellyfinAPI
 import OrderedCollections
 import SwiftUI
@@ -44,7 +45,7 @@ struct DevicesView: View {
         }
         .animation(.linear(duration: 0.2), value: viewModel.state)
         .navigationTitle(L10n.devices)
-        .toolbarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(isEditing)
         .refreshable {
             viewModel.refresh()
@@ -62,12 +63,12 @@ struct DevicesView: View {
             }
             ToolbarItem(placement: .bottomBar) {
                 if isEditing {
-                    Button(L10n.delete, role: .destructive) {
+                    Button(L10n.delete) {
                         isPresentingDeleteSelectionConfirmation = true
                     }
-                    .backport
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(.toolbarPill(.red))
                     .disabled(selectedDevices.isEmpty)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
         }
@@ -156,31 +157,15 @@ struct DevicesView: View {
     private var navigationBarEditView: some View {
         if viewModel.background.is(.refreshing) {
             ProgressView()
-        } else if isEditing {
-            Button(L10n.cancel, role: .cancel) {
-                isEditing = false
+        } else {
+            Button(isEditing ? L10n.cancel : L10n.edit) {
+                isEditing.toggle()
                 UIDevice.impact(.light)
-                selectedDevices.removeAll()
-            }
-            .foregroundStyle(.primary, .secondary)
-            .if(true) { view in
-                if #available(iOS 26.0, *) {
-                    view
-                } else {
-                    view
-                        .backport
-                        .buttonStyle(.glass)
+                if !isEditing {
+                    selectedDevices.removeAll()
                 }
             }
-            .controlSize(.small)
-        } else {
-            Button(L10n.edit) {
-                isEditing = true
-                UIDevice.impact(.light)
-            }
-            .backport
-            .buttonStyle(.glass)
-            .controlSize(.small)
+            .buttonStyle(.toolbarPill)
         }
     }
 
@@ -197,17 +182,7 @@ struct DevicesView: View {
                 selectedDevices = Set(viewModel.devices.compactMap(\.id))
             }
         }
-        .foregroundStyle(.primary, .secondary)
-        .if(true) { view in
-            if #available(iOS 26.0, *) {
-                view
-            } else {
-                view
-                    .backport
-                    .buttonStyle(.glass)
-            }
-        }
-        .controlSize(.small)
+        .buttonStyle(.toolbarPill)
         .disabled(!isEditing)
     }
 

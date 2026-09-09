@@ -6,9 +6,13 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
+import Defaults
 import SwiftUI
 
 struct ListRowMenu<Content: View, Subtitle: View>: View {
+
+    @Default(.isLiquidGlassEnabled)
+    private var isLiquidGlassEnabled
 
     @FocusState
     private var isFocused: Bool
@@ -17,70 +21,12 @@ struct ListRowMenu<Content: View, Subtitle: View>: View {
     private let subtitle: Subtitle?
     private let content: () -> Content
 
-    @ViewBuilder
-    private var buttonView: some View {
-        if UIDevice.supportsLiquidGlass {
-            glassBody
+    private func buttonShape(cornerRadius: Double) -> AnyShape {
+        if #available(tvOS 26.0, *), isLiquidGlassEnabled {
+            AnyShape(Capsule())
         } else {
-            legacyBody
+            AnyShape(RoundedRectangle(cornerRadius: cornerRadius))
         }
-    }
-
-    @ViewBuilder
-    private var labelView: some View {
-        HStack {
-            title
-                .foregroundStyle(isFocused ? .black : .white)
-                .padding(.leading, 4)
-
-            Spacer()
-
-            if let subtitle {
-                subtitle
-                    .foregroundStyle(isFocused ? .black : .secondary)
-                    .brightness(isFocused ? 0.4 : 0)
-            }
-
-            Image(systemName: "chevron.up.chevron.down")
-                .font(.body)
-                .fontWeight(.regular)
-                .foregroundStyle(isFocused ? .black : .secondary)
-                .brightness(isFocused ? 0.4 : 0)
-        }
-        .padding(.horizontal)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-    }
-
-    @ViewBuilder
-    private var glassBody: some View {
-        labelView
-            .glassEffect(
-                .regular.tint(isFocused ? .white : nil),
-                in: .capsule
-            )
-            .scaleEffect(x: isFocused ? 1.01 : 1.0, y: isFocused ? 1.05 : 1.0, anchor: .center)
-            .animation(.easeInOut(duration: 0.125), value: isFocused)
-            .listRowBackground(Color.clear)
-    }
-
-    @ViewBuilder
-    private var legacyBody: some View {
-        labelView
-            .background {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12.5)
-                        .fill(isFocused ? Color.white : Color.clear)
-
-                    if isFocused {
-                        RoundedRectangle(cornerRadius: 12.5)
-                            .fill(Color.white.opacity(0.8))
-                            .scaleEffect(x: 1, y: 1.1, anchor: .center)
-                    }
-                }
-            }
-            .scaleEffect(x: isFocused ? 1.01 : 1.0, y: isFocused ? 1.05 : 1.0, anchor: .center)
-            .animation(.easeInOut(duration: 0.125), value: isFocused)
-            .listRowBackground(Color.clear)
     }
 
     var body: some View {
@@ -90,6 +36,73 @@ struct ListRowMenu<Content: View, Subtitle: View>: View {
         .menuStyle(.borderlessButton)
         .listRowInsets(.zero)
         .focused($isFocused)
+    }
+
+    @ViewBuilder
+    private var buttonView: some View {
+        if #available(tvOS 26.0, *) {
+            HStack {
+                title
+                    .foregroundStyle(isFocused ? .black : .white)
+                    .padding(.leading, 4)
+
+                Spacer()
+
+                if let subtitle {
+                    subtitle
+                        .foregroundStyle(isFocused ? .black : .secondary)
+                        .brightness(isFocused ? 0.4 : 0)
+                }
+
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.body.weight(.regular))
+                    .foregroundStyle(isFocused ? .black : .secondary)
+                    .brightness(isFocused ? 0.4 : 0)
+            }
+            .padding(.horizontal)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .background(
+                ZStack {
+                    buttonShape(cornerRadius: 12.5)
+                        .fill(isFocused ? Color.white : Color.clear)
+                    if isFocused {
+                        buttonShape(cornerRadius: 12.5)
+                            .fill(Color.white.opacity(0.8))
+                            .scaleEffect(x: 1.0, y: isFocused ? 1.10 : 1.0, anchor: .center)
+                    }
+                }
+            )
+            .scaleEffect(x: isFocused ? 1.01 : 1.0, y: isFocused ? 1.05 : 1.0, anchor: .center)
+            .animation(.easeInOut(duration: 0.125), value: isFocused)
+            .listRowBackground(Color.clear)
+        } else {
+            HStack {
+                title
+                    .foregroundStyle(isFocused ? .black : .white)
+                    .padding(.leading, 4)
+
+                Spacer()
+
+                if let subtitle {
+                    subtitle
+                        .foregroundStyle(isFocused ? .black : .secondary)
+                        .brightness(isFocused ? 0.4 : 0)
+                }
+
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.body.weight(.regular))
+                    .foregroundStyle(isFocused ? .black : .secondary)
+                    .brightness(isFocused ? 0.4 : 0)
+            }
+            .padding(.horizontal)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .background(
+                buttonShape(cornerRadius: 10)
+                    .fill(isFocused ? Color.white : Color.clear)
+            )
+            .scaleEffect(isFocused ? 1.04 : 1.0)
+            .animation(.easeInOut(duration: 0.125), value: isFocused)
+        }
     }
 }
 

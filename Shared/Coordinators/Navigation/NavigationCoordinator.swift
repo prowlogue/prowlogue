@@ -11,62 +11,66 @@ import SwiftUI
 @MainActor
 final class NavigationCoordinator: ObservableObject {
 
-    struct PresentedRoute: Identifiable {
-
-        let route: NavigationRoute
-        let coordinator: NavigationCoordinator
-
-        var id: String {
-            route.id
-        }
-    }
-
     @Published
     var path: [NavigationRoute] = []
 
     @Published
-    var presentedSheet: PresentedRoute?
+    var presentedSheet: NavigationRoute?
     @Published
-    var presentedFullScreen: PresentedRoute?
+    var presentedFullScreen: NavigationRoute?
+
+    /// Depth of this coordinator within a nested presentation chain (0 == a tab root). Set by
+    /// `NavigationInjectionView` when it creates the child coordinator for a presented route.
+    var depth: Int = 0
+
+    /// The outermost coordinator of this chain (a tab root). `nil` means this coordinator *is*
+    /// the root. Weak so the chain doesn't retain upward.
+    weak var parentRootCoordinator: NavigationCoordinator?
+
+    /// The outermost coordinator — `self` when this is already a tab root.
+    var rootCoordinator: NavigationCoordinator {
+        parentRootCoordinator ?? self
+    }
 
     func push(
         _ route: NavigationRoute
     ) {
-        #if os(tvOS)
-        if let presentedCoordinator = presentedFullScreen?.coordinator ?? presentedSheet?.coordinator {
-            presentedCoordinator.push(route)
-            return
-        }
+        let style = route.transitionStyle
 
-        switch route.transitionStyle {
-        case .push, .sheet:
-            presentedSheet = .init(
-                route: route,
-                coordinator: .init()
-            )
-        case .fullscreen:
-            presentedFullScreen = .init(
-                route: route,
-                coordinator: .init()
-            )
-        }
-        #else
-        switch route.transitionStyle {
+        // `.push` is hierarchical drill-down → it belongs on the `NavigationStack` path on *every*
+        // platform (Apple's recommended pattern). On tvOS the deep item chain is therefore pure
+        // push (no nested covers), which both fixes the deep-navigation memory/stutter problem and
+        // sidesteps the tvOS modal-presentation bug — that bug only affects sheets/full-screen
+        // covers, which keep using the cover workaround below.
+        //
+        // No depth cap: the stack only renders the *top* page and frees popped pages, so deep
+        // drilling stays lightweight. (We tried trimming the oldest entry to bound depth, but
+        // removing the bottom of a *live* `NavigationStack` forces tvOS to rebuild the stack —
+        // it yanks focus and visibly flickers back a page. Letting the user drill indefinitely is
+        // both what's wanted and the only glitch-free option; `.critical` memory pressure is the
+        // backstop, see `SwiftfinApp+configure`.)
+        switch style {
         case .push:
             path.append(route)
         case .sheet:
-            presentedSheet = .init(
-                route: route,
-                coordinator: .init()
-            )
+            presentedSheet = route
         case .fullscreen:
+            #if os(tvOS)
+            presentedFullScreen = route
+            #else
             withAnimation {
-                presentedFullScreen = .init(
-                    route: route,
-                    coordinator: .init()
-                )
+                presentedFullScreen = route
             }
+            #endif
         }
-        #endif
+    }
+
+    /// Collapses the entire navigation chain back to the tab root (e.g. Home), in one step:
+    /// pops every pushed page off the stack and dismisses any presented cover stacked on it.
+    func dismissToRoot() {
+        let root = rootCoordinator
+        root.path.removeAll()
+        root.presentedSheet = nil
+        root.presentedFullScreen = nil
     }
 }

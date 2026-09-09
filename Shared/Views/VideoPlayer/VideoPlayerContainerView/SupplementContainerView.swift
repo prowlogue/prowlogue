@@ -40,29 +40,6 @@ extension VideoPlayer.UIVideoPlayerContainerViewController {
             containerState.isScrubbing
         }
 
-        #if os(iOS)
-        private var isPresentingFullScreenSupplement: Bool {
-            !containerState.isCompact &&
-                containerState.selectedSupplement?.presentationStyle == .expanded
-        }
-
-        private var closeButton: some View {
-            Button {
-                containerState.select(supplement: nil)
-            } label: {
-                Label(L10n.close, systemImage: "chevron.down")
-                    .contentShape(Rectangle())
-            }
-            .frame(
-                width: VideoPlayer.PlaybackControls.Toolbar.buttonSize,
-                height: VideoPlayer.PlaybackControls.Toolbar.buttonSize
-            )
-            .modifier(
-                VideoPlayer.PlaybackControls.OverlayBarButtonStyleModifier()
-            )
-        }
-        #endif
-
         private var defaultTabFocus: SupplementElement? {
             if let id = containerState.selectedSupplement?.id {
                 return .supplementTab(id)
@@ -87,9 +64,9 @@ extension VideoPlayer.UIVideoPlayerContainerViewController {
             }
             #if os(iOS)
             .background {
-                    GestureView()
-                        .environment(\.panGestureDirection, .vertical)
-                }
+                GestureView()
+                    .environment(\.panGestureDirection, .vertical)
+            }
             #endif
         }
 
@@ -101,13 +78,7 @@ extension VideoPlayer.UIVideoPlayerContainerViewController {
                     .frame(maxWidth: .infinity)
                     .disabled(true)
             } content: {
-                HStack(spacing: VideoPlayer.PlaybackControls.Toolbar.supplementButtonSpacing) {
-                    #if os(iOS)
-                    if isPresentingFullScreenSupplement {
-                        closeButton
-                    }
-                    #endif
-
+                HStack(spacing: UIDevice.isTV ? 20 : 10) {
                     if containerState.isGuestSupplement, let supplement = containerState.selectedSupplement {
                         Button(supplement.displayTitle) {
                             containerState.select(supplement: nil)
@@ -131,12 +102,13 @@ extension VideoPlayer.UIVideoPlayerContainerViewController {
                 .scrollIfLargerThanContainer(axes: .horizontal, alignment: .leading)
             }
             .edgePadding(.horizontal)
+            .focusSection()
+            .backport
             .defaultFocus(
                 $focusedElement,
                 defaultTabFocus,
                 priority: .userInitiated
             )
-            .focusSection()
             .if(!UIDevice.isTV) { view in
                 view
                     .padding(.leading, safeAreaInsets.leading)
@@ -162,22 +134,25 @@ extension VideoPlayer.UIVideoPlayerContainerViewController {
                             }
                         )
                     ) { supplement in
+                        // See the tvOS branch: re-inject across `SupplementTabView`'s per-supplement
+                        // `HostingController` boundary so the supplement bodies keep their environment objects.
                         supplementContainer(for: supplement.supplement)
+                            .environmentObject(containerState)
+                            .environmentObject(manager)
                             .eraseToAnyView()
                     }
                     #else
                     SupplementTabView(
                         items: Array(currentSupplements),
-                        selection: containerState.selectedSupplement?.id,
-                        onPresentedSelectionChange: { id in
-                            let supplement = id.flatMap { currentSupplements[id: $0] }
-                            containerState.containerView?.presentSupplementContainer(
-                                supplement != nil,
-                                presentationStyle: supplement?.presentationStyle
-                            )
-                        }
+                        selection: containerState.selectedSupplement?.id
                     ) { supplement in
+                        // `SupplementTabView` re-hosts each supplement in its OWN `HostingController`, which
+                        // starts a fresh SwiftUI environment — the `manager`/`containerState` injected on the
+                        // parent hosting controller do NOT cross that boundary. Re-inject them here or the
+                        // supplement bodies crash with "No ObservableObject of type MediaPlayerManager found".
                         supplementContainer(for: supplement.supplement)
+                            .environmentObject(containerState)
+                            .environmentObject(manager)
                             .eraseToAnyView()
                     }
                     #endif
@@ -199,6 +174,7 @@ extension VideoPlayer.UIVideoPlayerContainerViewController {
                     // - Focus is only needed from Supplement -> ProgressBar.
                     Color.clear
                         .frame(height: 1)
+                        .backport
                         .focusable(containerState.isPresentingSupplement)
                         .focused($focusedElement, equals: .focusBoundary)
 
@@ -222,8 +198,9 @@ extension VideoPlayer.UIVideoPlayerContainerViewController {
                 )
                 currentSupplements = newSupplements
             }
-            .onChange(of: focusedElement) {
-                switch focusedElement {
+            .backport
+            .onChange(of: focusedElement) { _, newValue in
+                switch newValue {
                 case let .supplementTab(id):
                     if containerState.selectedSupplement?.id != id,
                        let supplement = currentSupplements[id: id]
@@ -238,15 +215,13 @@ extension VideoPlayer.UIVideoPlayerContainerViewController {
                     break
                 }
             }
-            .onChange(of: containerState.isProgressBarFocused) {
-                if containerState.isProgressBarFocused, containerState.isPresentingSupplement {
+            .backport
+            .onChange(of: containerState.isProgressBarFocused) { _, focused in
+                if focused, containerState.isPresentingSupplement {
                     containerState.select(supplement: nil)
                 }
             }
             #if os(iOS)
-            .onChange(of: containerState.selectedSupplement?.id) { _, id in
-                containerState.containerView?.presentSupplementContainer(id != nil)
-            }
             .environment(
                 \.panAction,
                 .init(

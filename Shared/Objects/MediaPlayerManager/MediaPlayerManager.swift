@@ -8,9 +8,10 @@
 
 import Combine
 import Defaults
-import FactoryKit
+import Factory
 import Foundation
 import JellyfinAPI
+import VLCUI
 
 // TODO: proper error catching
 // TODO: be a UserSessionService?
@@ -104,6 +105,8 @@ final class MediaPlayerManager: ViewModel {
             if let playbackItem {
                 self.item = playbackItem.baseItem
                 seconds = playbackItem.baseItem.startSeconds ?? .zero
+                lastPlaybackPosition = 0
+                observedDuration = nil
                 playbackItem.manager = self
                 setSupplements()
 
@@ -141,7 +144,7 @@ final class MediaPlayerManager: ViewModel {
 
     // TODO: replace with graph dependency package
     private func setSupplements() {
-        var newSupplements = Defaults[.VideoPlayer.supplements].compactMap { kind -> (any MediaPlayerSupplement)? in
+        self.supplements = Defaults[.VideoPlayer.supplements].compactMap { kind -> (any MediaPlayerSupplement)? in
             switch kind {
             case .info:
                 return MediaInfoSupplement(item: item)
@@ -158,24 +161,36 @@ final class MediaPlayerManager: ViewModel {
                 return PlaybackInformationSupplement(itemID: itemID)
             }
         }
-
-        if item.isLiveStream, Defaults[.Experimental.videoPlayerEPG] {
-            newSupplements.append(EPGSupplement())
-        }
-
-        self.supplements = newSupplements
     }
 
     /// The current seconds media playback is set to.
     let secondsBox: PublishedBox<Duration> = .init(initialValue: .zero)
 
+    /// The player's own playback position as a 0…1 fraction of the media, reported by the proxy. This is the
+    /// authoritative "did playback actually reach the end" signal — independent of the `runtime` METADATA,
+    /// which can be longer than the file's true duration (which made autoplay silently freeze on a black
+    /// frame; see `_ended`). Reset to 0 for each new item.
+    var lastPlaybackPosition: Float = 0
+
+    /// The player's ACTUAL parsed media length, as reported by the proxy (only the VLC proxy sets this — the
+    /// AVPlayer path leaves it nil and keeps using the metadata runtime). The server's `runtime` METADATA
+    /// (Jellyfin `RunTimeTicks`) is frequently a little longer than the real file, which leaves the progress
+    /// bar short of 100% and "time left" above 0:00 at the true end. Reset per item; drives `playbackRuntime`.
+    var observedDuration: Duration?
+
+    /// The runtime the playback UI (progress bar, timestamps) should measure against. Best practice for a
+    /// Jellyfin/VLC client is to drive the VISUAL bar off the player's own parsed length once it's known, and
+    /// fall back to the server metadata until then (so there's never a broken bar while VLC is still parsing).
+    var playbackRuntime: Duration? {
+        if let observedDuration, observedDuration > .zero {
+            return observedDuration
+        }
+        return item.runtime
+    }
+
     var seconds: Duration {
         get { secondsBox.value }
         set { secondsBox.value = newValue }
-    }
-
-    var playbackBitrate: PlaybackBitrate {
-        playbackItem?.requestedBitrate ?? Defaults[.VideoPlayer.Playback.appMaximumBitrate]
     }
 
     /// Holds a weak reference to the current media player proxy.
@@ -200,13 +215,17 @@ final class MediaPlayerManager: ViewModel {
 //    }
 
     init(
-        provider: MediaPlayerItemProvider,
-        queue: (any MediaPlayerQueue)? = nil
+        item: BaseItemDto,
+        queue: (any MediaPlayerQueue)? = nil,
+        mediaPlayerItemProvider: @escaping MediaPlayerItemProviderFunction
     ) {
-        self.item = provider.item
+        self.item = item
         self.queue = queue.map { AnyMediaPlayerQueue($0) }
         self.state = .loadingItem
-        self.initialMediaPlayerItemProvider = provider
+        self.initialMediaPlayerItemProvider = .init(
+            item: item,
+            function: mediaPlayerItemProvider
+        )
         super.init()
 
         self.queue?.manager = self
@@ -227,24 +246,33 @@ final class MediaPlayerManager: ViewModel {
 
     @Function(\Action.Cases.ended)
     private func _ended() async throws {
-        // TODO: change to observe given seconds against runtime
-        //       instead of sent action?
+        // `.ended` should represent the NATURAL end of playback. Some players (notably VLC) can emit it a
+        // little early, or — for transcodes — at a mid-stream data gap, so verify we're actually at the end
+        // before auto-advancing.
+        //
+        // We PREFER the player's own position fraction (0…1), which is authoritative and independent of the
+        // `runtime` METADATA. The old check (`runtime - seconds <= 1s`) trusted only the metadata: when a
+        // file's true duration is shorter than the reported runtime (or the last position update lags the
+        // real end), that window never matched, so autoplay silently did nothing and the player FROZE on a
+        // black frame. The position fraction fixes that for every case; the runtime window is only a fallback.
+        let reachedEnd: Bool = if lastPlaybackPosition >= 0.95 {
+            true
+        } else if let runtime = item.runtime {
+            (runtime - seconds) <= .seconds(5)
+        } else {
+            // No position and no runtime to judge by — treat the player's end as final rather than freezing.
+            true
+        }
 
-        // Ended should represent natural ending of playback, which
-        // is verifiable by given seconds being near item runtime.
-        // VLC proxy will send ended early.
-        guard let runtime = item.runtime else {
-            await self.stop()
+        guard reachedEnd else {
+            // Reported ended well before the end (e.g. a transcode data gap) → ignore, don't advance.
             return
         }
-        let isNearEnd = (runtime - seconds) <= .seconds(1)
 
-        guard isNearEnd else {
-            // If not near end, ignore.
-            return
-        }
-
-        if let nextItem = queue?.nextItem, try authenticatedUser.data.configuration?.enableNextEpisodeAutoPlay == true {
+        // An explicit-mode queue (e.g. shuffle) forces auto-advance regardless of the user's
+        // `enableNextEpisodeAutoPlay` server setting; otherwise honor that setting.
+        let autoPlayEnabled = try authenticatedUser.data.configuration?.enableNextEpisodeAutoPlay == true
+        if let nextItem = queue?.nextItem, queue?.forcesAutoAdvance == true || autoPlayEnabled {
             await self.playNewItem(provider: nextItem)
         } else {
             await self.stop()
@@ -420,9 +448,18 @@ final class MediaPlayerManager: ViewModel {
             mediaSource: currentItem.mediaSource,
             audioStreamIndex: audioStreamIndex ?? currentItem.selectedAudioStreamIndex,
             subtitleStreamIndex: subtitleStreamIndex ?? currentItem.selectedSubtitleStreamIndex,
+            // Keep the SESSION's resolved engine (the presented proxy/view is fixed for the session — see the
+            // hybrid AVPlayer/VLC split). Without this the rebuild would fall back to the default engine's
+            // `DeviceProfile`, which could mismatch the mounted proxy (e.g. a VLC-profile stream fed to the
+            // native AVPlayer). Matters for the adaptive-bitrate re-negotiation, which rebuilds mid-session.
+            videoPlayerType: currentItem.videoPlayerType,
             requestedBitrate: requestedBitrate ?? currentItem.requestedBitrate,
             modifyItem: { item in
                 if item.userData == nil {
+                    // `key` became non-optional in jellyfin-sdk-swift 3.x (Jellyfin 12.0 surface). This is a
+                    // synthetic, client-only user-data object that exists solely to carry the resume
+                    // position into the rebuild — it is never sent back to the server, so an empty key is
+                    // correct (and is what upstream uses).
                     item.userData = UserItemDataDto(key: "")
                 }
                 item.userData?.playbackPositionTicks = currentSeconds.ticks
@@ -440,29 +477,5 @@ final class MediaPlayerManager: ViewModel {
 
         self.playbackItem = newItem
         self.seconds = currentSeconds
-    }
-
-    nonisolated static func getMaxBitrate(
-        for requestedBitrate: PlaybackBitrate,
-        testSize: PlaybackBitrateTestSize = Defaults[.VideoPlayer.appMaximumBitrateTest]
-    ) async throws -> Int {
-
-        guard requestedBitrate == .auto else { return requestedBitrate.rawValue }
-
-        guard let userSession = Container.shared.currentUserSession() else {
-            throw UserSessionError.missingCurrentSession
-        }
-
-        let testStartTime = Date()
-        let _ = try await userSession.client.send(Paths.getBitrateTestBytes(size: testSize.rawValue))
-        let testDuration = Date().timeIntervalSince(testStartTime)
-        let testSizeBits = Double(testSize.rawValue * 8)
-        let testBitrate = testSizeBits / testDuration
-
-        return clamp(
-            Int(testBitrate),
-            min: PlaybackBitrate.kbps420.rawValue,
-            max: Int(Int32.max)
-        )
     }
 }

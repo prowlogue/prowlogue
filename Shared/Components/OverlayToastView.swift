@@ -107,11 +107,10 @@ private struct OverlayToastContent: View {
         }
         .padding(contentPadding)
         .frame(minHeight: minHeight)
-        .backport
-        .glassEffect(
-            .regular.interactive(!UIDevice.isTV),
-            in: .capsule
-        )
+        .background(.thinMaterial)
+        .clipShape(Capsule())
+        .overlay(Capsule().stroke(Color.gray.opacity(0.2), lineWidth: 1))
+        .shadow(color: Color.black.opacity(0.2), radius: 6, x: 0, y: 5)
     }
 
     private var contentPadding: EdgeInsets {

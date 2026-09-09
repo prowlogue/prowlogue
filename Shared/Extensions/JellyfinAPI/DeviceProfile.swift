@@ -24,19 +24,36 @@ extension DeviceProfile {
 
         deviceProfile.codecProfiles = videoPlayer.codecProfiles
 
-        if StoredValues[.User.forceSubtitleBurnIn] {
-            deviceProfile.subtitleProfiles = SubtitleProfile.build(method: .encode) {
-                SubtitleFormat.allCases
-            }
-        } else {
-            deviceProfile.subtitleProfiles = videoPlayer.subtitleProfiles
-        }
-
+        // Upstream (Swiftfin #2194): the Maximum Resolution ceiling rides along as one more codec profile, so
+        // a taller source is transcoded down instead of Direct Played.
         if let resolutionCodecProfile = maxResolution.codecProfile {
             deviceProfile.codecProfiles?.append(resolutionCodecProfile)
         }
 
+        // Prowlogue (tvOS): apply the Burn-In setting (Auto/Always/Never) to what the client declares it can
+        // render — which is what makes the server burn (Encode) or not. Auto = unchanged.
+        #if os(tvOS)
+        deviceProfile.subtitleProfiles = ProwlogueSubtitleTrackSelection.adjustedSubtitleProfiles(videoPlayer.subtitleProfiles)
+        #else
+        deviceProfile.subtitleProfiles = videoPlayer.subtitleProfiles
+        #endif
+
         // MARK: - DirectPlay & Transcoding Profiles
+
+        // AVPlayer (`.native`) has NO Matroska demuxer — it can only open a fixed container set (mp4/mov/
+        // mpeg-ts/…), never MKV. So when a "force original video" mode advertises "any container", the server
+        // Direct Plays an MKV remux that the native engine can't open → infinite spinner (HDR) / black screen
+        // (Dolby Vision). Constrain the forced container to the engine's OWN demuxable set so incompatible
+        // containers (MKV, …) fall through to the transcoding profile — a cheap container REMUX to fMP4/HLS that
+        // keeps the HEVC video + HDR/Dolby Vision intact. VLC demuxes essentially anything, so it stays "any
+        // container" (`nil`) to avoid needless remuxes. (See DeviceProfile forced/preferred cases below.)
+        let forcedDirectPlayContainers: String? = {
+            guard videoPlayer == .native else { return nil }
+            let containers = videoPlayer.directPlayProfiles
+                .compactMap(\.container)
+                .flatMap { $0.split(separator: ",").map(String.init) }
+            return containers.isEmpty ? nil : Set(containers).sorted().joined(separator: ",")
+        }()
 
         switch compatibilityMode {
         case .auto:
@@ -48,7 +65,40 @@ extension DeviceProfile {
             deviceProfile.transcodingProfiles = PlaybackCompatibility.Video.compatibilityTranscodingProfile
 
         case .directPlay:
-            deviceProfile.directPlayProfiles = PlaybackCompatibility.Video.forcedDirectPlayProfile
+            // Force original video, but only within containers THIS engine can actually demux (see
+            // `forcedDirectPlayContainers`). For `.native` (AVPlayer) this excludes MKV etc.; keep the remux
+            // transcoding profile as the fallback so those still play (container-copy → fMP4/HLS, no re-encode,
+            // HDR/DV preserved) instead of black-screening. VLC keeps pure forced Direct Play (any container,
+            // no transcode) since it demuxes everything.
+            deviceProfile.directPlayProfiles = [
+                DirectPlayProfile(container: forcedDirectPlayContainers, type: .video),
+            ]
+            if videoPlayer == .native {
+                deviceProfile.transcodingProfiles = videoPlayer.transcodingProfiles
+            }
+
+        case .preferDirectPlay:
+            // Like `.directPlay`, accept ANY container/video codec so the original video Direct Plays — but
+            // keep THIS engine's supported audio codecs (so e.g. Dolby TrueHD/DTS aren't claimed) and KEEP
+            // the transcoding profiles. The server then copies the video and transcodes only the audio the
+            // device can't decode, instead of sending an undecodable stream (= silence). Audio CSV is the
+            // union of the engine's own Direct Play audio codecs; container/videoCodec left nil = "any".
+            let supportedAudioCodecs = videoPlayer.directPlayProfiles
+                .compactMap(\.audioCodec)
+                .flatMap { $0.split(separator: ",").map(String.init) }
+            let audioCSV = Set(supportedAudioCodecs).sorted().joined(separator: ",")
+            // Container constrained to what the engine can demux (nil = any, for VLC). On `.native` this stops
+            // the server from Direct Playing an MKV that AVPlayer can't open — those remux via the transcoding
+            // profile below instead. `videoCodec` left nil = any, so the original video still Direct Plays where
+            // the container allows.
+            deviceProfile.directPlayProfiles = [
+                DirectPlayProfile(
+                    audioCodec: audioCSV.isEmpty ? nil : audioCSV,
+                    container: forcedDirectPlayContainers,
+                    type: .video
+                ),
+            ]
+            deviceProfile.transcodingProfiles = videoPlayer.transcodingProfiles
 
         case .custom:
             let customProfileMode = Defaults[.VideoPlayer.Playback.customDeviceProfileAction]

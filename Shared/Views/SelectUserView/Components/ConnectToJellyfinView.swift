@@ -24,19 +24,14 @@ extension SelectUserView {
                 Text(L10n.connectToJellyfinServerStart)
                     .multilineTextAlignment(.center)
 
-                Button {
+                Button(L10n.connect) {
                     router.route(to: .connectToServer)
-                } label: {
-                    Text(L10n.connect)
-                        .frame(maxWidth: .infinity)
                 }
-                .fontWeight(.semibold)
-                .backport
-                .buttonStyle(.glassProminent.shadow(false))
-                .tint(accentColor)
-                #if os(iOS)
-                .controlSize(.large)
-                #endif
+                .foregroundStyle(
+                    accentColor.overlayColor,
+                    accentColor
+                )
+                .buttonStyle(.primary)
                 .frame(
                     height: UIDevice.isTV ? 75 : 44
                 )

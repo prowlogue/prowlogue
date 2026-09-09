@@ -68,6 +68,7 @@ extension TranscodeReason: Displayable, SystemImageable {
             L10n.videoCodecTagNotSupported
         case .streamCountExceedsLimit:
             L10n.streamCountExceedsLimit
+        /// Added by the Jellyfin 12.0 API surface (SDK 3.x).
         case .videoRotationNotSupported:
             L10n.videoRotationNotSupported
         }

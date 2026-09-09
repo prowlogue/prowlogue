@@ -38,6 +38,7 @@ struct ItemSubtitleSearchView: View {
             }
         }
         .navigationTitle(L10n.search)
+        .backport
         .toolbarTitleDisplayMode(.inline)
         .onReceive(viewModel.events) { event in
             switch event {
@@ -56,21 +57,13 @@ struct ItemSubtitleSearchView: View {
                 ProgressView()
             }
             #if os(iOS)
-            if #available(iOS 26, *) {
-                Button(L10n.save, role: .confirm, action: save)
-                    .disabled(selectedSubtitles.isEmpty)
-            } else {
-                Button(L10n.save, action: save)
-                    .foregroundStyle(accentColor.overlayColor, accentColor)
-                    .disabled(selectedSubtitles.isEmpty)
-                    .backport
-                    .buttonStyle(.glassProminent)
-                    .controlSize(.small)
-            }
+            saveButton
+                .buttonStyle(.toolbarPill)
             #endif
         }
-        .onChange(of: isPerfectMatch) {
-            viewModel.search(isPerfectMatch: isPerfectMatch)
+        .backport
+        .onChange(of: isPerfectMatch) { _, newValue in
+            viewModel.search(isPerfectMatch: newValue)
         }
     }
 
@@ -86,17 +79,9 @@ struct ItemSubtitleSearchView: View {
 
             #if os(tvOS)
             Section {
-                Button(action: save) {
-                    Text(L10n.save)
-                        .frame(maxWidth: .infinity)
-                }
-                .disabled(selectedSubtitles.isEmpty)
-                .listRowInsets(.zero)
-                .listRowBackground(Color.clear)
-                .fontWeight(.semibold)
-                .backport
-                .buttonStyle(.glassProminent.shadow(false))
-                .tint(accentColor)
+                saveButton
+                    .buttonStyle(.primary)
+                    .listRowInsets(.zero)
             }
             #endif
 
@@ -124,8 +109,12 @@ struct ItemSubtitleSearchView: View {
         }
     }
 
-    private func save() {
-        guard selectedSubtitles.isNotEmpty else { return }
-        viewModel.set(selectedSubtitles)
+    private var saveButton: some View {
+        Button(L10n.save) {
+            guard selectedSubtitles.isNotEmpty else { return }
+            viewModel.set(selectedSubtitles)
+        }
+        .foregroundStyle(accentColor.overlayColor, accentColor)
+        .disabled(selectedSubtitles.isEmpty)
     }
 }

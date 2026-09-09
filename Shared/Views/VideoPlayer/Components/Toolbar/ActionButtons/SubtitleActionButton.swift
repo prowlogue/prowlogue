@@ -12,7 +12,7 @@ extension VideoPlayer.PlaybackControls.Toolbar.ActionButtons {
 
     struct Subtitles: View {
 
-        @ViewContextContains(.isInMenu)
+        @Environment(\.isInMenu)
         private var isInMenu
 
         @EnvironmentObject
@@ -41,7 +41,10 @@ extension VideoPlayer.PlaybackControls.Toolbar.ActionButtons {
 
         var body: some View {
             if let playbackItem = manager.playbackItem {
-                Menu {
+                Menu(
+                    L10n.subtitles,
+                    systemImage: systemImage
+                ) {
                     if isInMenu {
                         content(playbackItem: playbackItem)
                     } else {
@@ -49,13 +52,12 @@ extension VideoPlayer.PlaybackControls.Toolbar.ActionButtons {
                             content(playbackItem: playbackItem)
                         }
                     }
-                } label: {
-                    Label(L10n.subtitles, systemImage: systemImage)
                 }
                 .videoPlayerActionButtonTransition()
                 .assign(playbackItem.$selectedSubtitleStreamIndex, to: $selectedSubtitleStreamIndex)
-                .onChange(of: selectedSubtitleStreamIndex) {
-                    playbackItem.selectedSubtitleStreamIndex = selectedSubtitleStreamIndex
+                .backport
+                .onChange(of: selectedSubtitleStreamIndex) { _, newValue in
+                    playbackItem.selectedSubtitleStreamIndex = newValue
                 }
             }
         }

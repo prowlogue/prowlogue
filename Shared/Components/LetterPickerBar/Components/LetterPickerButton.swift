@@ -23,7 +23,7 @@ extension LetterPickerBar {
         private var isFocused: Bool
 
         let letter: ItemLetter
-        let action: () -> Void
+        let viewModel: FilterViewModel
 
         private var foregroundStyle: Color {
             if isFocused {
@@ -35,34 +35,48 @@ extension LetterPickerBar {
             }
         }
 
-        private var isGlassVisible: Bool {
-            isFocused || isSelected
-        }
-
-        private var glassTint: Color {
-            isFocused ? .primary : accentColor
+        private var backgroundStyle: Color {
+            if isFocused {
+                Color.primary
+            } else if isSelected {
+                accentColor
+            } else {
+                .clear
+            }
         }
 
         var body: some View {
-            Button(action: action) {
-                Text(letter.value)
-                    .foregroundStyle(foregroundStyle)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .backport
-                    .glassEffect(
-                        isGlassVisible ? .regular.selection(
-                            tint: glassTint,
-                            foregroundColor: glassTint.overlayColor
-                        ) : .identity,
-                        in: .rect(cornerRadius: 5)
-                    )
-                    .isSelected(isGlassVisible)
+            Button {
+                if viewModel.currentFilters.letter.contains(letter) {
+                    viewModel.currentFilters.letter = []
+                } else {
+                    viewModel.currentFilters.letter = [letter]
+                }
+            } label: {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 5)
+                        .foregroundStyle(backgroundStyle)
+                        .if(UIDevice.isTV && (isFocused || isSelected)) { background in
+                            background
+                                .posterShadow()
+                        }
+
+                    Text(letter.value)
+                        .font(LetterPickerBar.font)
+                        .foregroundStyle(foregroundStyle)
+                        .if(UIDevice.isTV && !isFocused && !isSelected) { character in
+                            character
+                                .posterShadow()
+                        }
+                }
             }
             .buttonStyle(.borderless)
-            .buttonBorderShape(.roundedRectangle)
-            .focused($isFocused)
-            .scaleEffect(isFocused ? 1.2 : 1)
-            .animation(.easeInOut(duration: 0.15), value: isFocused)
+            .if(UIDevice.isTV) { view in
+                view
+                    .focused($isFocused)
+                    .scaleEffect(isFocused ? 1.2 : 1)
+                    .animation(.easeInOut(duration: 0.15), value: isFocused)
+            }
         }
     }
 }

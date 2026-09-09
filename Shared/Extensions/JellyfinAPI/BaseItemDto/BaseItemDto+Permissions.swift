@@ -6,7 +6,7 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
-import FactoryKit
+import Factory
 import JellyfinAPI
 import SwiftUI
 
@@ -26,9 +26,11 @@ extension BaseItemDto {
         case .playlist:
             return canDelete == true
         case .boxSet:
-            return userPolicy.enableCollectionManagement == true || userPolicy.isAdministrator == true
+            return (userPolicy.enableCollectionManagement == true || userPolicy.isAdministrator == true)
+                && StoredValues[.User.enableCollectionManagement]
         default:
             return userPolicy.isAdministrator == true
+                && StoredValues[.User.enableItemEditing]
         }
     }
 
@@ -54,5 +56,14 @@ extension BaseItemDto {
         default:
             return false
         }
+    }
+
+    /// Indicates whether the Editor Menu should be shown for the item
+    var showEditorMenu: Bool {
+        canEditMetadata
+            || canEditSubtitles
+        // TODO: Enable with Lyrics and/or Downloads
+        // || canEditLyrics
+        // || (!UIDevice.isTV && canBeDownloaded)
     }
 }

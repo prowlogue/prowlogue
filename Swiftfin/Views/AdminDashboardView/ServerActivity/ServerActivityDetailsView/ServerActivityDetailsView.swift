@@ -79,7 +79,7 @@ struct ServerActivityDetailsView: View {
             L10n.activityLog
                 .localizedCapitalized
         )
-        .toolbarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.inline)
         .onFirstAppear {
             viewModel.refresh()
         }

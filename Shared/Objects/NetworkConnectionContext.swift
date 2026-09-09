@@ -13,15 +13,15 @@ import Network
 import NetworkExtension
 #endif
 
-struct NetworkConnectionContext: Equatable {
+struct NetworkConnectionContext {
 
     let isSatisfied: Bool
-    let interface: ServerConnection.Interface
+    let interface: ServerConnectionInterface
     let wifiSSID: String?
 
     init(
         isSatisfied: Bool,
-        interface: ServerConnection.Interface,
+        interface: ServerConnectionInterface,
         wifiSSID: String?
     ) {
         self.isSatisfied = isSatisfied
@@ -29,13 +29,15 @@ struct NetworkConnectionContext: Equatable {
         self.wifiSSID = wifiSSID?.nilIfBlank
     }
 
-    init(path: Network.NWPath) async {
+    static func current(path: Network.NWPath) async -> NetworkConnectionContext {
         let interface = Self.interface(for: path)
-        let wifiSSID = path.status == .satisfied && interface == .wifi ? await Self.currentWifiSSID() : nil
+        let wifiSSID = path.status == .satisfied && interface == .wifi ? await currentWifiSSID() : nil
 
-        self.isSatisfied = path.status == .satisfied
-        self.interface = interface
-        self.wifiSSID = wifiSSID
+        return .init(
+            isSatisfied: path.status == .satisfied,
+            interface: interface,
+            wifiSSID: wifiSSID
+        )
     }
 
     static func current() async -> NetworkConnectionContext {
@@ -49,7 +51,7 @@ struct NetworkConnectionContext: Equatable {
                 monitor.cancel()
 
                 Task {
-                    let context = await NetworkConnectionContext(path: path)
+                    let context = await Self.current(path: path)
                     continuation.resume(returning: context)
                 }
             }
@@ -66,7 +68,7 @@ struct NetworkConnectionContext: Equatable {
         )
     }
 
-    private static func interface(for path: Network.NWPath) -> ServerConnection.Interface {
+    private static func interface(for path: Network.NWPath) -> ServerConnectionInterface {
         if path.usesInterfaceType(.wifi) {
             .wifi
         } else if path.usesInterfaceType(.cellular) {

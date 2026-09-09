@@ -12,7 +12,7 @@ import SwiftUI
 struct ParentalRatingPicker: View {
 
     @StateObject
-    private var viewModel: PagingLibraryViewModel<ParentalRatingLibrary>
+    private var viewModel: ParentalRatingsViewModel
 
     private let selection: Binding<String?>
     private let title: String
@@ -20,20 +20,20 @@ struct ParentalRatingPicker: View {
     init(_ title: String, name: Binding<String?>) {
         self.selection = name
         self.title = title
-        self._viewModel = .init(wrappedValue: .init(library: .init()))
+        self._viewModel = .init(wrappedValue: .init(initialValue: []))
     }
 
     private var currentParentalRating: ParentalRating? {
-        viewModel.elements.first(property: \.name, equalTo: selection.wrappedValue)
+        viewModel.value.first(property: \.name, equalTo: selection.wrappedValue)
     }
 
     @ViewBuilder
     private var picker: some View {
         Picker(
             title,
-            sources: viewModel.elements,
+            sources: viewModel.value,
             selection: selection.map(
-                getter: { name in viewModel.elements.first(property: \.name, equalTo: name) },
+                getter: { name in viewModel.value.first(property: \.name, equalTo: name) },
                 setter: { rating in rating?.name }
             )
         )
@@ -54,7 +54,7 @@ struct ParentalRatingPicker: View {
             picker
             #endif
         }
-        .enabled(viewModel.state == .content)
+        .enabled(viewModel.state == .initial)
         .onFirstAppear {
             viewModel.refresh()
         }

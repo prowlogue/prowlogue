@@ -8,8 +8,7 @@
 
 import Algorithms
 import AVKit
-import Defaults
-import FactoryKit
+import Factory
 import Foundation
 import JellyfinAPI
 import MediaPlayer
@@ -26,7 +25,6 @@ extension BaseItemDto {
             name: person.name,
             type: .person
         )
-        self.people = [person]
     }
 }
 
@@ -34,6 +32,13 @@ extension BaseItemDto: Displayable {
 
     var displayTitle: String {
         name ?? L10n.unknown
+    }
+}
+
+extension BaseItemDto: LibraryIdentifiable {
+
+    var unwrappedIDHashOrZero: Int {
+        id?.hashValue ?? 0
     }
 }
 
@@ -124,7 +129,7 @@ extension BaseItemDto {
 
     var birthplace: String? {
         guard type == .person else { return nil }
-        return productionLocations?.first { $0.isNotEmpty }
+        return productionLocations?.first
     }
 
     var deathday: Date? {
@@ -148,15 +153,6 @@ extension BaseItemDto {
         channelType == .tv
     }
 
-    var isAiring: Bool {
-        if let currentProgram {
-            return currentProgram.isAiring
-        }
-
-        guard let startDate, let endDate else { return false }
-        return startDate <= .now && .now <= endDate
-    }
-
     /// Whether the item has independent playable content, similar
     /// to if an item can provide its own media sources.
     ///
@@ -177,11 +173,7 @@ extension BaseItemDto {
     /// image used in the now playing system.
     @MainActor
     func getNowPlayingImage() async -> UIImage? {
-        let imageSources = imageSources(
-            for: preferredPosterDisplayType,
-            size: .small,
-            environment: .init(useParent: true)
-        )
+        let imageSources = thumbImageSources()
 
         guard let firstImage = await ImagePipeline.Swiftfin.other.loadFirstImage(from: imageSources) else {
             let failedSystemContentView = SystemImageContentView(
@@ -199,7 +191,7 @@ extension BaseItemDto {
             Rectangle()
                 .fill(Color.secondarySystemFill)
 
-            transform(image: image, displayType: preferredPosterDisplayType)
+            transform(image: image)
         }
         .posterAspectRatio(preferredPosterDisplayType, contentMode: .fit)
         .frame(width: 400)
@@ -208,47 +200,27 @@ extension BaseItemDto {
     }
 
     func getPlaybackItemProvider(
-        userSession: UserSession?,
-        mediaSource: MediaSourceInfo? = nil,
-        audioStreamIndex: Int? = nil,
-        subtitleStreamIndex: Int? = nil,
-        requestedBitrate: PlaybackBitrate = Defaults[.VideoPlayer.Playback.appMaximumBitrate]
-    ) -> MediaPlayerItemProvider? {
+        userSession: UserSession
+    ) -> MediaPlayerItemProvider {
         switch type {
         case .program:
-            guard isAiring, let userSession else { return nil }
-
-            return MediaPlayerItemProvider(item: self) { program, modifyItem in
-                guard let channel = try? await program.getChannel(
+            MediaPlayerItemProvider(item: self) { program in
+                guard let channel = try? await self.getChannel(
                     for: program,
                     userSession: userSession
-                ) else {
+                ),
+                    let mediaSource = channel.mediaSources?.first
+                else {
                     throw ErrorMessage(L10n.unknownError)
                 }
-
-                return try await MediaPlayerItem.build(
-                    for: channel,
-                    modifyItem: modifyItem
-                )
+                return try await MediaPlayerItem.build(for: program, mediaSource: mediaSource)
             }
         default:
-            let selectedMediaSource = mediaSource ?? mediaSources?.first
-
-            return MediaPlayerItemProvider(
-                item: self,
-                mediaSource: selectedMediaSource,
-                audioStreamIndex: audioStreamIndex,
-                subtitleStreamIndex: subtitleStreamIndex,
-                requestedBitrate: requestedBitrate
-            ) { item, modifyItem in
-                try await MediaPlayerItem.build(
-                    for: item,
-                    mediaSource: selectedMediaSource,
-                    audioStreamIndex: audioStreamIndex,
-                    subtitleStreamIndex: subtitleStreamIndex,
-                    requestedBitrate: requestedBitrate,
-                    modifyItem: modifyItem
-                )
+            MediaPlayerItemProvider(item: self) { item in
+                guard let mediaSource = item.mediaSources?.first else {
+                    throw ErrorMessage(L10n.unknownError)
+                }
+                return try await MediaPlayerItem.build(for: item, mediaSource: mediaSource)
             }
         }
     }
@@ -260,7 +232,8 @@ extension BaseItemDto {
         guard type == .program else { return nil }
 
         var parameters = Paths.GetItemsParameters()
-        parameters.ids = program.channelID.flatMap { [$0] }
+        parameters.fields = .MinimumFields
+        parameters.ids = [program.channelID ?? ""]
 
         let request = Paths.getItems(parameters: parameters)
         let response = try await userSession.client.send(request)
@@ -269,7 +242,7 @@ extension BaseItemDto {
     }
 
     var runtime: Duration? {
-        guard let ticks = runTimeTicks, ticks > 0 else { return nil }
+        guard let ticks = runTimeTicks else { return nil }
         return Duration.ticks(ticks)
     }
 
@@ -285,44 +258,31 @@ extension BaseItemDto {
 
     // MARK: Calculations
 
-    var runTimeLabel: String? {
-        let timeHMSFormatter: DateComponentsFormatter = {
-            let formatter = DateComponentsFormatter()
-            formatter.unitsStyle = .abbreviated
-            formatter.allowedUnits = [.hour, .minute]
-            return formatter
-        }()
+    // Shared instance: allocating a DateComponentsFormatter per call is expensive, and these labels
+    // are read from view bodies that re-evaluate many times during a detail-page load (main thread only).
+    private static let hourMinuteAbbreviatedFormatter: DateComponentsFormatter = {
+        let formatter = DateComponentsFormatter()
+        formatter.unitsStyle = .abbreviated
+        formatter.allowedUnits = [.hour, .minute]
+        return formatter
+    }()
 
+    var runTimeLabel: String? {
         guard let runTimeTicks,
-              let text = timeHMSFormatter.string(from: Double(runTimeTicks / 10_000_000)) else { return nil }
+              let text = Self.hourMinuteAbbreviatedFormatter.string(from: Double(runTimeTicks / 10_000_000)) else { return nil }
 
         return text
     }
 
     var progressLabel: String? {
-        if let currentProgram {
-            return currentProgram.progressLabel
-        }
+        guard let playbackPositionTicks = userData?.playbackPositionTicks,
+              let totalTicks = runTimeTicks,
+              playbackPositionTicks != 0,
+              totalTicks != 0 else { return nil }
 
-        let interval: TimeInterval
+        let remainingSeconds = (totalTicks - playbackPositionTicks) / 10_000_000
 
-        if let playbackPositionTicks = userData?.playbackPositionTicks,
-           let totalTicks = runTimeTicks,
-           playbackPositionTicks != 0,
-           totalTicks != 0
-        {
-            interval = TimeInterval((totalTicks - playbackPositionTicks) / 10_000_000)
-        } else if isAiring, let startDate {
-            interval = Date.now.timeIntervalSince(startDate)
-        } else {
-            return nil
-        }
-
-        let formatter = DateComponentsFormatter()
-        formatter.allowedUnits = [.hour, .minute]
-        formatter.unitsStyle = .abbreviated
-
-        return formatter.string(from: interval)
+        return Self.hourMinuteAbbreviatedFormatter.string(from: .init(remainingSeconds))
     }
 
     var programDuration: TimeInterval? {
@@ -348,29 +308,6 @@ extension BaseItemDto {
         return progress / length
     }
 
-    var progressPercentage: Double? {
-        if let currentProgram {
-            return currentProgram.progressPercentage
-        }
-
-        if isAiring, let startDate, let endDate {
-            let length = endDate.timeIntervalSince(startDate)
-            guard length > 0 else { return nil }
-
-            return clamp(
-                Date.now.timeIntervalSince(startDate) / length,
-                min: 0,
-                max: 1
-            )
-        }
-
-        guard let playedPercentage = userData?.playedPercentage, playedPercentage > 0 else {
-            return nil
-        }
-
-        return playedPercentage / 100
-    }
-
     var subtitleStreams: [MediaStream] {
         mediaStreams?.filter { $0.type == .subtitle } ?? []
     }
@@ -390,20 +327,11 @@ extension BaseItemDto {
     }
 
     var isUnaired: Bool {
-        if let startDate {
-            return startDate > Date.now
+        if let premierDate = premiereDate {
+            premierDate > Date()
+        } else {
+            false
         }
-
-        if let premiereDate {
-            return premiereDate > Date.now
-        }
-
-        return false
-    }
-
-    var hasAired: Bool {
-        guard let startDate, let endDate else { return false }
-        return startDate <= Date.now && endDate < Date.now
     }
 
     var airDateLabel: String? {
@@ -419,11 +347,57 @@ extension BaseItemDto {
         return dateFormatter.string(from: premiereDate)
     }
 
+    /// Shared "yyyy" formatter — `DateFormatter()` allocation is expensive and the year labels
+    /// are computed per poster card during scroll. `DateFormatter` is thread-safe (Foundation,
+    /// iOS 7+), so a single cached instance is safe to share.
+    private static let yearOnlyFormatter: DateFormatter = {
+        let dateFormatter = DateFormatter()
+        // "yyyy" = calendar year. ("YYYY" is the ISO week-numbering year, which renders the WRONG
+        // year for late-Dec / early-Jan dates — a source of off-by-one years on poster labels.)
+        dateFormatter.dateFormat = "yyyy"
+        return dateFormatter
+    }()
+
     var premiereDateYear: String? {
         guard let premiereDate else { return nil }
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "YYYY"
-        return dateFormatter.string(from: premiereDate)
+        return Self.yearOnlyFormatter.string(from: premiereDate)
+    }
+
+    var endDateYear: String? {
+        guard let endDate else { return nil }
+        return Self.yearOnlyFormatter.string(from: endDate)
+    }
+
+    /// A release-year label: a single year for movies (e.g. "2019"), or a broadcast
+    /// range for series (e.g. "2019 - 2023", or "2019 - Present" while still airing).
+    /// Mirrors how jellyfin-web presents years in "More Like This".
+    ///
+    /// Series **always** show a range. We key off the series `status` (like the web does), NOT the
+    /// `endDate` — a still-airing show often carries a stale/season-level `endDate`, so trusting it
+    /// would wrongly cap an ongoing series (e.g. Jujutsu Kaisen showing "2020 - 2021").
+    var yearRangeLabel: String? {
+        guard let start = premiereDateYear ?? productionYear.map(String.init) else { return nil }
+
+        // Non-series (movies, etc.) show the single year.
+        guard type == .series else { return start }
+
+        switch SeriesStatus(rawValue: status ?? "") {
+        case .continuing:
+            // Still airing → through "Present", regardless of any end date on the record.
+            return "\(start) - Present"
+        case .ended:
+            // Concluded → show through the final broadcast year (range even if same year).
+            return "\(start) - \(endDateYear ?? start)"
+        case .unreleased:
+            // Not yet aired → just the (expected) year.
+            return start
+        case nil:
+            // Unknown status: use the end date if present, else assume still going.
+            if let end = endDateYear {
+                return "\(start) - \(end)"
+            }
+            return "\(start) - Present"
+        }
     }
 
     var hasExternalLinks: Bool {
@@ -521,22 +495,12 @@ extension BaseItemDto {
         }
     }
 
-    /// Can this `BaseItemDto` be favorited
-    var canBeFavorited: Bool {
-        switch type {
-        case .program, .liveTvProgram, .tvProgram:
-            false
-        default:
-            true
-        }
-    }
-
     /// Can this `BaseItemDto` be mark as played
     var canBePlayed: Bool {
         switch type {
-        case .audio, .audioBook, .book, .boxSet, .channelFolderItem, .collectionFolder, .episode, .manualPlaylistsFolder,
-             .movie, .musicAlbum, .musicArtist, .musicVideo, .playlist, .playlistsFolder, .recording, .season,
-             .series, .trailer, .video:
+        case .audio, .audioBook, .book, .boxSet, .channel, .channelFolderItem, .collectionFolder, .episode, .manualPlaylistsFolder,
+             .movie, .liveTvChannel, .liveTvProgram, .musicAlbum, .musicArtist, .musicVideo, .playlist, .playlistsFolder,
+             .program, .recording, .season, .series, .trailer, .tvChannel, .tvProgram, .video:
             true
         default:
             false
@@ -547,10 +511,6 @@ extension BaseItemDto {
 
         if isUnaired {
             return L10n.unaired
-        }
-
-        if hasAired {
-            return L10n.ended
         }
 
         if isMissing {
@@ -569,7 +529,7 @@ extension BaseItemDto {
         switch type {
         case .audio:
             L10n.album
-        case .episode, .season:
+        case .episode:
             L10n.series
         case .musicAlbum:
             L10n.artist
@@ -582,23 +542,12 @@ extension BaseItemDto {
         switch type {
         case .audio:
             album
-        case .episode, .season:
+        case .episode:
             seriesName
         case .musicAlbum:
             albumArtist
-        case .liveTvProgram, .program, .tvProgram:
-            channelName
         default:
             nil
-        }
-    }
-
-    var parentRootID: String? {
-        switch type {
-        case .episode:
-            seriesID
-        default:
-            parentID
         }
     }
 

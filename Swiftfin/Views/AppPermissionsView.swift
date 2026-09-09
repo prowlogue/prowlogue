@@ -6,6 +6,7 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
+import Engine
 import OrderedCollections
 import SwiftUI
 
@@ -50,8 +51,7 @@ struct AppPermissionsView: View {
                                         .foregroundStyle(.blue)
                                         .padding(4)
                                         .padding(.horizontal, 4)
-                                        .backport
-                                        .glassEffect(in: .capsule)
+                                        .background(Color.gray.opacity(0.2), in: .capsule)
                                 }
                             } label: {
                                 Text(title)

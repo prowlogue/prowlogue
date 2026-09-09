@@ -8,161 +8,83 @@
 
 import Combine
 import Defaults
-import FactoryKit
-import Foundation
+import Factory
+import Logging
 import SwiftUI
-import UIKit
-
-enum AppStartupError: Error {
-
-    case dataStack(Error)
-}
 
 @MainActor
-@Stateful
 final class RootCoordinator: ObservableObject {
 
-    @CasePathable
-    enum Action {
-        case start
+    @Published
+    var root: RootItem = .appLoading
 
-        var transition: Transition {
-            switch self {
-            case .start:
-                .to(.ready)
-            }
-        }
-    }
+    private var cancellables: Set<AnyCancellable> = []
+    private let logger = Logger.swiftfin()
 
-    enum State {
-        case initial
-        case error
-        case ready
-    }
+    init() {
+        Task {
+            do {
+                try await SwiftfinStore.setupDataStack()
 
-    private var started = false
-    private var accentColorCancellable: AnyCancellable?
-    private var appearanceCancellable: AnyCancellable?
-    private var currentSessionCancellable: AnyCancellable?
-    private var splashScreenCancellable: AnyCancellable?
+                if Container.shared.currentUserSession() != nil, !Defaults[.signOutOnClose] {
+                    #if os(tvOS)
+                    await MainActor.run {
+                        root(.mainTab)
+                    }
+                    #else
+                    await MainActor.run {
+                        root(.serverCheck)
+                    }
+                    #endif
+                } else {
+                    await MainActor.run {
+                        root(.selectUser)
+                    }
+                }
 
-    @Injected(\.userSessionManager)
-    private var userSessionManager: UserSessionManager
-
-    deinit {
-        accentColorCancellable?.cancel()
-        appearanceCancellable?.cancel()
-        currentSessionCancellable?.cancel()
-        splashScreenCancellable?.cancel()
-    }
-
-    @Function(\Action.Cases.start)
-    private func _start() async throws {
-        guard !started else { return }
-        started = true
-
-        do {
-            try await SwiftfinStore.setupDataStack()
-            startPreferenceObservation()
-        } catch {
-            throw AppStartupError.dataStack(error)
-        }
-    }
-
-    private func startPreferenceObservation() {
-        setPreferenceObservation(for: userSessionManager.currentSession)
-
-        currentSessionCancellable = userSessionManager.$currentSession
-            .dropFirst()
-            .sink { [weak self] session in
-                Task { @MainActor in
-                    self?.setPreferenceObservation(for: session)
+            } catch {
+                await MainActor.run {
+                    Notifications[.didFailMigration].post()
                 }
             }
+        }
+
+        Notifications[.didChangeUserSession]
+            .publisher
+            .sink(receiveValue: didChangeUserSession)
+            .store(in: &cancellables)
+
+        Notifications[.didChangeServerConnection]
+            .publisher
+            .sink(receiveValue: didChangeServerConnection)
+            .store(in: &cancellables)
     }
 
-    private func setPreferenceObservation(for session: UserSession?) {
-        if session == nil {
-            setAppDefaultsObservation()
-        } else {
-            setUserDefaultsObservation()
-        }
+    func root(_ newRoot: RootItem) {
+        root = newRoot
     }
 
-    private func setUserDefaultsObservation() {
-        accentColorCancellable?.cancel()
-        appearanceCancellable?.cancel()
-        splashScreenCancellable?.cancel()
-
-        accentColorCancellable = Task {
-            applyAccentColor(Defaults[.userAccentColor])
-
-            for await newValue in Defaults.updates(.userAccentColor) {
-                applyAccentColor(newValue)
-            }
+    private func didChangeUserSession() {
+        guard Container.shared.currentUserSession() != nil else {
+            logger.info("Signed out")
+            root(.selectUser)
+            return
         }
-        .asAnyCancellable()
 
-        appearanceCancellable = Task {
-            applyAppearance(Defaults[.userAppearance])
+        logger.info("Signed in")
 
-            for await newValue in Defaults.updates(.userAppearance) {
-                applyAppearance(newValue)
-            }
-        }
-        .asAnyCancellable()
-    }
-
-    private func setAppDefaultsObservation() {
-        accentColorCancellable?.cancel()
-        appearanceCancellable?.cancel()
-        splashScreenCancellable?.cancel()
-
-        accentColorCancellable = Task {
-            applyAccentColor(.jellyfinPurple)
-        }
-        .asAnyCancellable()
-
-        appearanceCancellable = Task {
-            applyAppAppearance()
-
-            for await newValue in Defaults.updates(.appAppearance) {
-                guard !Defaults[.selectUserUseSplashscreen] else { continue }
-
-                applyAppearance(newValue)
-            }
-        }
-        .asAnyCancellable()
-
-        splashScreenCancellable = Task {
-            for await _ in Defaults.updates(.selectUserUseSplashscreen) {
-                applyAppAppearance()
-            }
-        }
-        .asAnyCancellable()
-    }
-
-    @MainActor
-    private func applyAccentColor(_ color: Color) {
-        Defaults[.accentColor] = color
-
-        #if os(iOS)
-        UIApplication.shared.setAccentColor(color.uiColor)
+        #if os(tvOS)
+        root(.mainTab)
+        #else
+        root(.serverCheck)
         #endif
     }
 
-    @MainActor
-    private func applyAppearance(_ appearance: AppAppearance) {
-        Defaults[.appearance] = appearance
-        UIApplication.shared.setAppearance(appearance.style)
-    }
+    private func didChangeServerConnection(_ connection: ServerConnection) {
 
-    @MainActor
-    private func applyAppAppearance() {
-        if Defaults[.selectUserUseSplashscreen] {
-            applyAppearance(.dark)
-        } else {
-            applyAppearance(Defaults[.appAppearance])
-        }
+        guard Container.shared.currentUserSession() != nil else { return }
+
+        Container.shared.userSessionManager().refreshCurrentSession()
+        Notifications[.didChangeUserSession].post()
     }
 }

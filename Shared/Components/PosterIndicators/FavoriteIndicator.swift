@@ -10,10 +10,18 @@ import SwiftUI
 
 struct FavoriteIndicator: View {
 
+    let size: CGFloat
+
     var body: some View {
-        Image(systemName: "heart.circle.fill")
-            .resizable()
-            .symbolRenderingMode(.palette)
-            .foregroundStyle(.white, .pink)
+        ZStack(alignment: .bottomLeading) {
+            Color.clear
+
+            Image(systemName: "heart.circle.fill")
+                .resizable()
+                .frame(width: size, height: size)
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(.white, .pink)
+                .padding(3)
+        }
     }
 }

@@ -32,17 +32,16 @@ struct PhotoPickerModifier: ViewModifier {
                 selection: $selectedItem,
                 matching: .images
             )
-            .onChange(of: selectedItem) {
-                loadImage(from: selectedItem)
+            .backport
+            .onChange(of: selectedItem) { _, newValue in
+                loadImage(from: newValue)
             }
             .sheet(isPresented: Binding<Bool>(
                 get: { selectedImage != nil },
-                set: {
-                    if !$0 {
-                        selectedImage = nil
-                        selectedItem = nil
-                    }
-                }
+                set: { if !$0 {
+                    selectedImage = nil
+                    selectedItem = nil
+                } }
             )) {
                 if let image = selectedImage {
                     NavigationView {

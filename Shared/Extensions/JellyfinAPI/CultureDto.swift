@@ -30,7 +30,6 @@ extension CultureDto: Displayable {
 }
 
 extension CultureDto: @retroactive Identifiable {
-
     public var id: Int {
         hashValue
     }

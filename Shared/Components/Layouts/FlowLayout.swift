@@ -20,11 +20,15 @@ struct FlowLayout: Layout {
 
     // MARK: - Cache Structure
 
+    /// Measured subview sizes plus the computed row layout PER PROPOSED WIDTH.
+    ///
+    /// SwiftUI probes a `Layout` at several proposal widths within a single pass (min/ideal/max,
+    /// then the actual bounds), so a single-`lastWidth` cache thrashed: every probe missed, and the
+    /// full pipeline — `sizeThatFits(.unspecified)` per subview + the O(n²) row balancing — re-ran
+    /// each time. Sizes are measured once per subview change; row layouts are memoized per width.
     struct CacheData {
-        let subviewSizes: [CGSize]
-        let rows: [[Int]]
-        let totalSize: CGSize
-        let lastWidth: CGFloat?
+        var subviewSizes: [CGSize]
+        var layoutsByWidth: [CGFloat: (rows: [[Int]], totalSize: CGSize)]
     }
 
     // MARK: - Properties
@@ -58,39 +62,50 @@ struct FlowLayout: Layout {
 
     func makeCache(subviews: Subviews) -> CacheData {
         CacheData(
-            subviewSizes: [],
-            rows: [],
-            totalSize: .zero,
-            lastWidth: nil
+            subviewSizes: measuredSizes(of: subviews),
+            layoutsByWidth: [:]
         )
     }
 
     // MARK: - Update Cache
 
     func updateCache(_ cache: inout CacheData, subviews: Subviews) {
+        // Subviews changed — re-measure once and drop the per-width row layouts.
         cache = CacheData(
-            subviewSizes: [],
-            rows: [],
-            totalSize: .zero,
-            lastWidth: nil
+            subviewSizes: measuredSizes(of: subviews),
+            layoutsByWidth: [:]
         )
     }
 
     // MARK: - Calculate Layout
 
-    private func calculateLayout(
-        subviews: Subviews,
-        width: CGFloat
-    ) -> (sizes: [CGSize], rows: [[Int]], totalSize: CGSize) {
-        let sizes = subviews.map { subview in
+    private func measuredSizes(of subviews: Subviews) -> [CGSize] {
+        subviews.map { subview in
             let size = subview.sizeThatFits(.unspecified)
             return CGSize(width: ceil(size.width), height: ceil(size.height))
         }
+    }
 
-        let rows = computeRows(sizes: sizes, maxWidth: width)
-        let totalSize = computeTotalSize(rows: rows, sizes: sizes)
+    /// The memoized row layout for a width — computes (and caches) it on first sight of the width.
+    private func layout(
+        for width: CGFloat,
+        subviews: Subviews,
+        cache: inout CacheData
+    ) -> (rows: [[Int]], totalSize: CGSize) {
+        // Defensive: keep sizes in sync if the cache was created for a different subview count.
+        if cache.subviewSizes.count != subviews.count {
+            cache.subviewSizes = measuredSizes(of: subviews)
+            cache.layoutsByWidth = [:]
+        }
 
-        return (sizes, rows, totalSize)
+        if let cached = cache.layoutsByWidth[width] {
+            return cached
+        }
+
+        let rows = computeRows(sizes: cache.subviewSizes, maxWidth: width)
+        let totalSize = computeTotalSize(rows: rows, sizes: cache.subviewSizes)
+        cache.layoutsByWidth[width] = (rows, totalSize)
+        return (rows, totalSize)
     }
 
     // MARK: - Size That Fits
@@ -104,24 +119,12 @@ struct FlowLayout: Layout {
         let availableWidth = proposal.width ?? .infinity
         let effectiveWidth = availableWidth.isFinite ? availableWidth : 1000
 
-        if cache.lastWidth != effectiveWidth || cache.subviewSizes.isEmpty {
-            let (sizes, rows, totalSize) = calculateLayout(
-                subviews: subviews,
-                width: effectiveWidth
-            )
-
-            cache = CacheData(
-                subviewSizes: sizes,
-                rows: rows,
-                totalSize: totalSize,
-                lastWidth: effectiveWidth
-            )
-        }
+        let (_, totalSize) = layout(for: effectiveWidth, subviews: subviews, cache: &cache)
 
         // Return the calculated height but respect the proposed width
         return CGSize(
-            width: min(cache.totalSize.width, proposal.width ?? cache.totalSize.width),
-            height: cache.totalSize.height
+            width: min(totalSize.width, proposal.width ?? totalSize.width),
+            height: totalSize.height
         )
     }
 
@@ -134,24 +137,8 @@ struct FlowLayout: Layout {
         subviews: Subviews,
         cache: inout CacheData
     ) {
-        let availableWidth = bounds.width
-
-        if cache.lastWidth != availableWidth || cache.subviewSizes.isEmpty {
-            let (sizes, rows, totalSize) = calculateLayout(
-                subviews: subviews,
-                width: availableWidth
-            )
-
-            cache = CacheData(
-                subviewSizes: sizes,
-                rows: rows,
-                totalSize: totalSize,
-                lastWidth: availableWidth
-            )
-        }
-
+        let (rows, _) = layout(for: bounds.width, subviews: subviews, cache: &cache)
         let sizes = cache.subviewSizes
-        let rows = cache.rows
 
         var yOffset: CGFloat = bounds.minY
 

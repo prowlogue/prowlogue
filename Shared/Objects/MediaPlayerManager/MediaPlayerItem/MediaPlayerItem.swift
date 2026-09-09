@@ -38,6 +38,8 @@ class MediaPlayerItem: ViewModel, MediaPlayerObserver {
 
     private(set) var indexMap: MediaTrackIndexMap
 
+    private var externalSubtitlesResolved = false
+
     weak var manager: MediaPlayerManager? {
         didSet {
             for var o in observers {
@@ -50,6 +52,10 @@ class MediaPlayerItem: ViewModel, MediaPlayerObserver {
 
     let baseItem: BaseItemDto
     let deviceProfile: DeviceProfile
+    /// The player engine (VLC `.swiftfin` vs native AVPlayer) resolved for this item — see
+    /// `VideoPlayerType.hybrid(for:)`. Stored so the whole playback session (e.g. the episode
+    /// auto-play queue) builds adjacent items with the SAME engine the presented view/proxy uses.
+    let videoPlayerType: VideoPlayerType
     let mediaSource: MediaSourceInfo
     let playSessionID: String
     let previewImageProvider: (any PreviewImageProvider)?
@@ -60,7 +66,17 @@ class MediaPlayerItem: ViewModel, MediaPlayerObserver {
     let subtitleStreams: [MediaStream]
     let videoStreams: [MediaStream]
 
+    /// Chapter metadata + image URLs, resolved ONCE for the playback session.
+    /// `BaseItemDto.fullChapterInfo` builds an image URL (Codable query encoding) per
+    /// chapter on every access — reading it per overlay body pass was the player's
+    /// single biggest main-thread cost, so consumers read this stored copy instead.
+    let fullChapterInfo: [ChapterInfo.FullInfo]?
+
     let requestedBitrate: PlaybackBitrate
+
+    /// A custom HTTP `User-Agent` to send when playing this item's URL (external/custom IPTV sources whose
+    /// providers gate on it). `nil` for normal Jellyfin playback — the proxies then behave exactly as before.
+    let customUserAgent: String?
 
     // MARK: init
 
@@ -71,35 +87,57 @@ class MediaPlayerItem: ViewModel, MediaPlayerObserver {
         url: URL,
         requestedBitrate: PlaybackBitrate = .max,
         deviceProfile: DeviceProfile,
+        videoPlayerType: VideoPlayerType = .swiftfin,
         initialAudioStreamIndex: Int? = nil,
         initialSubtitleStreamIndex: Int? = nil,
         previewImageProvider: (any PreviewImageProvider)? = nil,
-        thumbnailProvider: ThumbnailProvider? = nil
+        thumbnailProvider: ThumbnailProvider? = nil,
+        customUserAgent: String? = nil
     ) {
         self.baseItem = baseItem
         self.mediaSource = mediaSource
         self.playSessionID = playSessionID
         self.requestedBitrate = requestedBitrate
         self.deviceProfile = deviceProfile
+        self.videoPlayerType = videoPlayerType
         self.previewImageProvider = previewImageProvider
         self.thumbnailProvider = thumbnailProvider
         self.url = url
+        self.customUserAgent = customUserAgent
+        self.fullChapterInfo = baseItem.fullChapterInfo
 
         let mediaStreams = mediaSource.mediaStreams
         let isTranscoding = mediaSource.transcodingURL != nil
 
         // TODO: Fix External Audio Tracks & Re-Enable
         self.audioStreams = mediaStreams?.filter { $0.type == .audio && $0.isExternal != true } ?? []
+        let isDirectPlayCompatibility = Defaults[.VideoPlayer.Playback.compatibilityMode] == .directPlay
         self.subtitleStreams = mediaStreams?.filter {
             $0.type == .subtitle
                 && $0.deliveryMethod != .drop
-                && !(Defaults[.VideoPlayer.Playback.compatibilityMode] == .directPlay
+                && !(isDirectPlayCompatibility
                     && $0.isExternal == true
                     && $0.isTextSubtitleStream != true)
         } ?? []
         self.videoStreams = mediaStreams?.filter { $0.type == .video } ?? []
 
+        // Prowlogue (tvOS): honor the user's Default Audio preference by picking the track by ISO-639 language
+        // code — reliable regardless of encoding / track count, since Jellyfin's server-side default can pick
+        // the wrong track when several are flagged default. Passing `baseItem` also lets it apply a manual
+        // audio-language choice made earlier in the same series this session. Only used when the caller didn't
+        // request an explicit track, and returns nil for "Default Track" → prior behavior (no regression).
+        let preferredAudioStreamIndex: Int?
+        #if os(tvOS)
+        preferredAudioStreamIndex = ProwlogueAudioTrackSelection.preferredAudioIndex(
+            among: self.audioStreams,
+            for: baseItem
+        )
+        #else
+        preferredAudioStreamIndex = nil
+        #endif
+
         let resolvedAudioStreamIndex = initialAudioStreamIndex
+            ?? preferredAudioStreamIndex
             ?? mediaSource.defaultAudioStreamIndex
             ?? mediaSource.mediaStreams?.first(where: { $0.type == .audio })?.index ?? 0
 
@@ -113,7 +151,31 @@ class MediaPlayerItem: ViewModel, MediaPlayerObserver {
 
         selectedAudioStreamIndex = resolvedAudioStreamIndex
 
+        // Prowlogue (tvOS): for a detected-anime title in Subbed mode, start with subtitles in the chosen
+        // Anime Subtitle Language (or OFF if set to None). Returns nil for Dubbed / non-anime → the existing
+        // default behavior below (no regression). Same warmed anime cache as the audio resolver.
+        let animeSubtitleStreamIndex: Int?
+        // Prowlogue (tvOS): the general Subtitle Mode resolver (Off / Default / Always / Forced) — authoritative
+        // for non-anime titles, so it fully governs the initial subtitle track (returns a definite index or -1).
+        let modeSubtitleStreamIndex: Int?
+        #if os(tvOS)
+        animeSubtitleStreamIndex = ProwlogueSubtitleTrackSelection.animeSubtitleIndex(
+            among: self.subtitleStreams,
+            for: baseItem
+        )
+        modeSubtitleStreamIndex = ProwlogueSubtitleTrackSelection.initialSubtitleIndex(
+            among: self.subtitleStreams,
+            audioStreams: self.audioStreams,
+            selectedAudioStreamIndex: selectedAudioStreamIndex
+        )
+        #else
+        animeSubtitleStreamIndex = nil
+        modeSubtitleStreamIndex = nil
+        #endif
+
         selectedSubtitleStreamIndex = initialSubtitleStreamIndex
+            ?? animeSubtitleStreamIndex
+            ?? modeSubtitleStreamIndex
             ?? mediaSource.defaultSubtitleStreamIndex
             ?? -1
 
@@ -131,9 +193,7 @@ class MediaPlayerItem: ViewModel, MediaPlayerObserver {
         case .audio:
 
             // Transcodes contain a single audio track and MUST rebuild.
-            if isTranscoding {
-                return true
-            }
+            if isTranscoding { return true }
 
             guard let newStream = audioStreams.first(where: { $0.index == newIndex }) else { return true }
 
@@ -149,9 +209,7 @@ class MediaPlayerItem: ViewModel, MediaPlayerObserver {
             let oldStream = oldIndex.flatMap { idx in subtitleStreams.first { $0.index == idx } }
 
             // Transitioning away from encoded subtitles always requires a rebuild so the server stops burning them into the video.
-            if oldStream?.deliveryMethod == .encode {
-                return true
-            }
+            if oldStream?.deliveryMethod == .encode { return true }
 
             // Catch if the new stream doesn't exist. If non-existent this will fallback to -1 and disable locally.
             guard let newStream = subtitleStreams.first(where: { $0.index == newIndex }) else { return false }
@@ -173,43 +231,42 @@ class MediaPlayerItem: ViewModel, MediaPlayerObserver {
         }
     }
 
-    /// Switches audio or subtitles without rebuilding the stream.
+    /// Switches an audio, subtitle track in the player without rebuilding the stream.
     func switchTrack(type: MediaStreamType, index: Int?) {
-        let playerIndex = indexMap.playerIndex(for: index)
+        let playerIndex: Int
+
+        guard let mappedPlayerIndex = indexMap.playerIndex(for: index) else {
+            return
+        }
+
+        playerIndex = mappedPlayerIndex
 
         switch type {
         case .audio:
-            guard let playerIndex,
-                  let proxy = manager?.proxy as? any MediaPlayerAudioTrackConfigurable
-            else { return }
+            guard let proxy = manager?.proxy as? any MediaPlayerAudioTrackConfigurable else { return }
             proxy.setAudioStream(.init(index: playerIndex))
         case .subtitle:
             guard let proxy = manager?.proxy as? any MediaPlayerSubtitleTrackConfigurable else { return }
-            // Disable subtitles until the requested track is available.
-            proxy.setSubtitleStream(.init(index: playerIndex ?? -1))
+            proxy.setSubtitleStream(.init(index: playerIndex))
         default:
             return
         }
     }
 
-    /// Replaces estimated track indexes with those reported by the player.
-    func setTrackIndexes(_ indexMap: MediaTrackIndexMap) {
-        self.indexMap = indexMap
-        switchTrack(type: .audio, index: selectedAudioStreamIndex)
-        switchTrack(type: .subtitle, index: selectedSubtitleStreamIndex)
-    }
+    /// Get subtitle mapped subtitle track indexes from `playbackChildren`
+    func getSubtitleIndexes(subtitleTracks: [(index: Int, title: String)]) {
+        guard !externalSubtitlesResolved else { return }
+        externalSubtitlesResolved = true
 
-    /// Refreshes sidecar mappings and reapplies the selected subtitle.
-    func updateSubtitleTrackMapping(subtitleTracks: [(playerIndex: Int, id: String)]) {
-        let sidecars: [(jellyfinIndex: Int, url: URL)] = subtitleStreams.sidecarSubtitles.compactMap { subtitle in
-            guard let jellyfinIndex = subtitle.index,
-                  let client = manager?.userSession?.client,
-                  let url = subtitle.url(with: client)
-            else { return nil }
-            return (jellyfinIndex, url)
-        }
+        let playbackChildren = subtitleStreams.sidecarSubtitles
+        guard playbackChildren.isNotEmpty else { return }
 
-        indexMap = indexMap.resolvingSidecarSubtitles(sidecars, subtitleTracks: subtitleTracks)
+        indexMap = indexMap.resolvingPlaybackChildren(
+            playbackChildren,
+            subtitleTracks: subtitleTracks,
+            isTranscoding: mediaSource.transcodingURL != nil
+        )
+
         switchTrack(type: .subtitle, index: selectedSubtitleStreamIndex)
     }
 }

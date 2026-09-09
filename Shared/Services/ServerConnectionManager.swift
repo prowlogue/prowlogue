@@ -8,68 +8,35 @@
 
 import Combine
 import Defaults
+import Factory
 import Foundation
 import JellyfinAPI
 import Logging
 import Network
 import Pulse
 
-@MainActor
-@Stateful
-final class ServerConnectionManager: ObservableObject {
-
-    @CasePathable
-    enum Action {
-        case resolveActiveConnection
-        case scheduleConnectionResolution
-        case start
-        case stop
-
-        case _resolutionDidUpdate(Resolution)
-
-        var transition: Transition {
-            switch self {
-            case .scheduleConnectionResolution, .start:
-                .none
-            case .resolveActiveConnection:
-                .to(.evaluating)
-            case let ._resolutionDidUpdate(.connected(connection)):
-                .to(.connected(connection))
-            case let ._resolutionDidUpdate(.unreachable(connections)):
-                .to(.unreachable(connections))
-            case .stop:
-                .to(.initial)
-            }
-        }
-    }
-
-    enum State: Equatable {
-        case initial
-        case evaluating
-        case connected(ServerConnection)
-        case unreachable([ServerConnection])
-    }
-
-    enum Resolution: Equatable {
-        case connected(ServerConnection)
-        case unreachable([ServerConnection])
-    }
+final class ServerConnectionManager {
 
     private static let logger = Logger.swiftfin()
 
+    private let logger = Logger.swiftfin()
     private let queue = DispatchQueue(label: "Swiftfin.ServerConnectionMonitor")
 
-    private weak var userSession: UserSession?
+    private var userSession: UserSession
     private var monitor: NWPathMonitor?
     private var isStarted = false
     private var context: NetworkConnectionContext = .unavailable
     private var evaluationTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
 
+    init(userSession: UserSession) {
+        self.userSession = userSession
+    }
+
     static func test(
         connection: ServerConnection,
         accessToken: String? = nil,
-        matchingServerID serverID: String
+        matchingServerID serverID: String? = nil
     ) async throws -> PublicSystemInfo {
         let sessionConfiguration = URLSessionConfiguration.swiftfin.copy() as! URLSessionConfiguration
         sessionConfiguration.timeoutIntervalForRequest = 8
@@ -88,7 +55,7 @@ final class ServerConnectionManager: ObservableObject {
         let response = try await client.send(Paths.getPublicSystemInfo)
         let publicInfo = response.value
 
-        if publicInfo.id != serverID {
+        if let serverID, publicInfo.id != serverID {
             throw ErrorMessage(L10n.connectionServerMismatch)
         }
 
@@ -100,23 +67,26 @@ final class ServerConnectionManager: ObservableObject {
         server: ServerState,
         accessToken: String?,
         context: NetworkConnectionContext
-    ) async -> Resolution {
-        guard context.isSatisfied else { return .unreachable([]) }
+    ) async -> ServerConnection? {
+        guard context.isSatisfied else { return nil }
 
         let candidates = server.serverConnections.filter { $0.matches(context) }
-        guard candidates.isNotEmpty else { return .unreachable([]) }
 
+        let currentConnection = server.activeServerConnection
         guard let reachableConnection = await firstReachableConnection(
             in: candidates,
             accessToken: accessToken,
             serverID: server.id
-        ) else { return .unreachable(candidates) }
+        ) else { return nil }
+        guard currentConnection?.id != reachableConnection.id else { return nil }
 
-        if server.activeServerConnection?.id != reachableConnection.id {
-            server.activeServerConnection = reachableConnection
-        }
+        server.activeServerConnection = reachableConnection
+        Notifications.postServerConnectionChange(
+            previous: currentConnection,
+            current: reachableConnection
+        )
 
-        return .connected(reachableConnection)
+        return reachableConnection
     }
 
     private static func firstReachableConnection(
@@ -125,7 +95,7 @@ final class ServerConnectionManager: ObservableObject {
         serverID: String
     ) async -> ServerConnection? {
         for connection in connections {
-            guard !Task.isCancelled else { return nil }
+            if Task.isCancelled { return nil }
 
             do {
                 _ = try await test(
@@ -148,8 +118,13 @@ final class ServerConnectionManager: ObservableObject {
         return nil
     }
 
-    @Function(\Action.Cases.start)
-    private func _start() {
+    @MainActor
+    func update(userSession: UserSession) {
+        self.userSession = userSession
+    }
+
+    @MainActor
+    func start() {
         guard !isStarted else { return }
         isStarted = true
 
@@ -158,26 +133,24 @@ final class ServerConnectionManager: ObservableObject {
 
         monitor.pathUpdateHandler = { [weak self] path in
             Task { [weak self] in
-                let newContext = await NetworkConnectionContext(path: path)
-                await self?.contextDidUpdate(newContext)
+                let context = await NetworkConnectionContext.current(path: path)
+                await self?.pathDidUpdate(context)
             }
         }
         monitor.start(queue: queue)
 
-        // TODO: determine if should be part of connection resolution
-        //       - probably a bit too greedy
-//        Notifications[.applicationWillEnterForeground]
-//            .publisher
-//            .sink { [weak self] in
-//                Task { @MainActor in
-//                    self?.scheduleConnectionResolution()
-//                }
-//            }
-//            .store(in: &cancellables)
+        Notifications[.applicationWillEnterForeground]
+            .publisher
+            .sink { [weak self] in
+                self?.scheduleEvaluation()
+            }
+            .store(in: &cancellables)
+
+        scheduleEvaluation()
     }
 
-    @Function(\Action.Cases.stop)
-    private func _stop() {
+    @MainActor
+    func stop() {
         guard isStarted else { return }
 
         isStarted = false
@@ -189,78 +162,61 @@ final class ServerConnectionManager: ObservableObject {
         context = .unavailable
     }
 
-    @Function(\Action.Cases.scheduleConnectionResolution)
-    private func _scheduleConnectionResolution() {
-        guard isAutoSwitchEnabled else { return }
+    @MainActor
+    func scheduleEvaluation() {
+        guard Defaults[.Experimental.serverConnectionAutoSwitch] else { return }
 
         evaluationTask?.cancel()
         evaluationTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(1.5))
-            guard !Task.isCancelled else { return }
-            await self?.resolveActiveConnection()
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            await self?.evaluateCurrentSession()
         }
     }
 
-    @Function(\Action.Cases.resolveActiveConnection)
-    private func _resolveActiveConnection() async {
-        guard !Task.isCancelled, isAutoSwitchEnabled, let userSession else { return }
+    @MainActor
+    func evaluateCurrentSession() async {
+        await evaluate(
+            server: userSession.server,
+            accessToken: userSession.user.accessToken
+        )
+    }
 
-        if context == .unavailable {
-            context = await NetworkConnectionContext.current()
+    @MainActor
+    func evaluate(
+        server: ServerState,
+        accessToken: String?
+    ) async {
+        guard Defaults[.Experimental.serverConnectionAutoSwitch] else { return }
+        guard server.isAutoSwitchEnabled else { return }
+
+        guard !Container.shared.userSessionManager().hasActivePlayback else {
+            logger.info("Skipped server connection switch during active playback")
+            return
         }
 
-        let currentConnection = userSession.server.activeServerConnection
-        let resolution = await Self.evaluate(
-            server: userSession.server,
-            accessToken: userSession.user.accessToken,
+        _ = await Self.evaluate(
+            server: server,
+            accessToken: accessToken,
             context: context
         )
-        guard !Task.isCancelled else { return }
-
-        if case let .connected(reachableConnection) = resolution,
-           currentConnection?.id != reachableConnection.id
-        {
-            Notifications[.didChangeServerConnection].post(reachableConnection)
-        }
-
-        await _resolutionDidUpdate(resolution)
     }
 
-    @Function(\Action.Cases._resolutionDidUpdate)
-    private func __resolutionDidUpdate(_ resolution: Resolution) {
-        // no-op, just for state transition
-    }
-
-    private func contextDidUpdate(_ context: NetworkConnectionContext) {
-        let didChange = context != self.context && context.isSatisfied
+    @MainActor
+    private func pathDidUpdate(_ context: NetworkConnectionContext) {
         self.context = context
-
-        if didChange, let connection = userSession?.server.activeServerConnection {
-            Notifications[.didChangeServerConnection].post(connection)
-        }
-
-        scheduleConnectionResolution()
-    }
-
-    private var isAutoSwitchEnabled: Bool {
-        guard let userSession else { return false }
-        return Defaults[.Experimental.serverConnectionAutoSwitch] && userSession.server.isAutoSwitchEnabled
+        scheduleEvaluation()
     }
 }
 
 extension ServerConnectionManager: UserSessionService {
 
-    func willStart(userSession: UserSession) async {
-        self.userSession = userSession
-
-        await resolveActiveConnection()
-    }
-
-    func didStart(userSession: UserSession) {
+    @MainActor
+    func userSessionDidStart() {
         start()
     }
 
-    func willStop(userSession: UserSession) {
+    @MainActor
+    func userSessionWillStop() {
         stop()
     }
 }

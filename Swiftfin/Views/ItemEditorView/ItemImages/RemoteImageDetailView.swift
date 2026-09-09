@@ -6,6 +6,7 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
+import Engine
 import JellyfinAPI
 import SwiftUI
 
@@ -79,6 +80,7 @@ struct RemoteImageDetailView: View {
                 }
             }
         }
+        .backport
         .toolbarTitleDisplayMode(.inline)
         .navigationTitle(L10n.image)
         .topBarTrailing {
@@ -86,20 +88,10 @@ struct RemoteImageDetailView: View {
                 ProgressView()
             }
 
-            let saveAction: () -> Void = {
+            Button(L10n.save) {
                 viewModel.saveRemoteImage(remoteImageInfo)
             }
-
-            Group {
-                if #available(iOS 26, *) {
-                    Button(L10n.save, role: .confirm, action: saveAction)
-                } else {
-                    Button(L10n.save, action: saveAction)
-                        .backport
-                        .buttonStyle(.glassProminent)
-                        .controlSize(.small)
-                }
-            }
+            .buttonStyle(.toolbarPill)
             .disabled(viewModel.background.is(.updating))
         }
         .onReceive(viewModel.events) { event in

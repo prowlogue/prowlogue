@@ -6,14 +6,15 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
-import FactoryKit
+import Engine
+import Factory
 import JellyfinAPI
 import SwiftUI
 
 struct ItemEditorView: View {
 
     @ObservedObject
-    var viewModel: ItemEditorViewModel
+    var viewModel: ItemEditorViewModel<BaseItemDto>
 
     @Router
     private var router
@@ -30,7 +31,7 @@ struct ItemEditorView: View {
             }
         }
         .navigationTitle(L10n.metadata)
-        .toolbarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.inline)
         .navigationBarCloseButton {
             router.dismiss()
         }
@@ -89,6 +90,28 @@ struct ItemEditorView: View {
 
                     ChevronButton(L10n.studios) {
                         router.route(to: .editStudios(item: viewModel.item))
+                    }
+                }
+            }
+
+            if viewModel.item.canDelete == true {
+                StateAdapter(initialValue: false) { isPresentingDeleteConfirmation in
+                    Button(L10n.delete, role: .destructive) {
+                        isPresentingDeleteConfirmation.wrappedValue = true
+                    }
+                    .buttonStyle(.primary)
+                    .confirmationDialog(
+                        L10n.deleteItemConfirmationMessage,
+                        isPresented: isPresentingDeleteConfirmation,
+                        titleVisibility: .visible
+                    ) {
+                        Button(
+                            L10n.confirm,
+                            role: .destructive,
+                            action: viewModel.delete
+                        )
+
+                        Button(L10n.cancel, role: .cancel) {}
                     }
                 }
             }

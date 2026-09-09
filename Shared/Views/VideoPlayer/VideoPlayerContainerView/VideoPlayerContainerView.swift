@@ -8,6 +8,7 @@
 
 import Combine
 import Defaults
+import Engine
 import Logging
 import MediaPlayer
 import SwiftUI
@@ -35,7 +36,7 @@ import SwiftUI
 
 extension VideoPlayer {
 
-    struct VideoPlayerContainerView<Player: View, PlaybackControls: View>: PlatformViewControllerRepresentable {
+    struct VideoPlayerContainerView<Player: View, PlaybackControls: View>: UIViewControllerRepresentable {
 
         private let containerState: VideoPlayerContainerState
         private let manager: MediaPlayerManager
@@ -103,34 +104,32 @@ extension VideoPlayer {
                 }
             }
 
-            private var presentedSupplementStyle: MediaPlayerSupplementPresentationStyle? {
-                #if os(tvOS)
-                containerState.presentedSupplementStyle
-                #else
-                containerState.selectedSupplement?.presentationStyle
-                #endif
-            }
-
             var body: some View {
                 player
-                    #if os(iOS)
-                        .overlay(Color.black.opacity(shouldPresentDimOverlay ? 0.5 : 0.0))
-                    #endif
-                    .overlay {
-                        Group {
-                            if presentedSupplementStyle == .expanded {
-                                Color.black.opacity(0.8)
-                            } else {
-                                EasedGradient(
-                                    colors: [.clear, .black],
-                                    startPoint: .center,
-                                    endPoint: .bottom
-                                )
-                            }
-                        }
+                #if os(iOS)
+                .overlay(Color.black.opacity(shouldPresentDimOverlay ? 0.5 : 0.0))
+                .animation(.linear(duration: 0.2), value: containerState.isPresentingPlaybackControls)
+                #endif
+                .overlay {
+                    GeometryReader { proxy in
+                        LinearGradient(
+                            stops: [
+                                .init(color: .clear, location: 0),
+                                .init(color: .black.opacity(0.04), location: 0.25),
+                                .init(color: .black.opacity(0.18), location: 0.45),
+                                .init(color: .black.opacity(0.42), location: 0.68),
+                                .init(color: .black.opacity(0.68), location: 0.86),
+                                .init(color: .black.opacity(0.82), location: 1),
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
                         .isVisible(shouldPresentDimOverlay)
+                        .frame(height: proxy.size.height * 0.55)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                     }
-                    .allowsHitTesting(false)
+                }
+                .allowsHitTesting(false)
             }
         }
 
@@ -165,51 +164,51 @@ extension VideoPlayer {
                 }
                 #if os(iOS)
                 .environment(
-                        \.longPressAction,
-                        .init(
-                            action: {
-                                containerState.containerView?.handleLongPressGesture(
-                                    location: $0,
-                                    unitPoint: $1,
-                                    state: $2
-                                )
-                            }
-                        )
+                    \.longPressAction,
+                    .init(
+                        action: {
+                            containerState.containerView?.handleLongPressGesture(
+                                location: $0,
+                                unitPoint: $1,
+                                state: $2
+                            )
+                        }
                     )
-                    .environment(
-                        \.panAction,
-                        .init(
-                            action: {
-                                containerState.containerView?.handlePanGesture(
-                                    translation: $0,
-                                    velocity: $1,
-                                    location: $2,
-                                    unitPoint: $3,
-                                    state: $4
-                                )
-                            }
-                        )
+                )
+                .environment(
+                    \.panAction,
+                    .init(
+                        action: {
+                            containerState.containerView?.handlePanGesture(
+                                translation: $0,
+                                velocity: $1,
+                                location: $2,
+                                unitPoint: $3,
+                                state: $4
+                            )
+                        }
                     )
-                    .environment(
-                        \.pinchAction,
-                        .init(
-                            action: {
-                                containerState.containerView?.handlePinchGesture(scale: $0, velocity: $1, state: $2)
-                            }
-                        )
+                )
+                .environment(
+                    \.pinchAction,
+                    .init(
+                        action: {
+                            containerState.containerView?.handlePinchGesture(scale: $0, velocity: $1, state: $2)
+                        }
                     )
-                    .environment(
-                        \.tapGestureAction,
-                        .init(
-                            action: {
-                                containerState.containerView?.handleTapGesture(
-                                    location: $0,
-                                    unitPoint: $1,
-                                    count: $2
-                                )
-                            }
-                        )
+                )
+                .environment(
+                    \.tapGestureAction,
+                    .init(
+                        action: {
+                            containerState.containerView?.handleTapGesture(
+                                location: $0,
+                                unitPoint: $1,
+                                count: $2
+                            )
+                        }
                     )
+                )
                 #endif
             }
         }
@@ -276,38 +275,12 @@ extension VideoPlayer {
             max(totalHeight * 0.6, 300) + EdgeInsets.edgePadding * 2
         }
 
-        private func regularSupplementContainerOffset(_ totalHeight: CGFloat) -> CGFloat {
+        private var regularSupplementContainerOffset: CGFloat {
             if UIDevice.isTV {
-                totalHeight / 3 + EdgeInsets.edgePadding * 2
+                view.bounds.height / 3 + EdgeInsets.edgePadding * 2
             } else {
                 200.0 + EdgeInsets.edgePadding * 2
             }
-        }
-
-        private func supplementContainerOffset(
-            for totalHeight: CGFloat,
-            isCompact: Bool? = nil
-        ) -> CGFloat {
-            let isCompact = isCompact ?? containerState.isCompact
-            let regularOffset = isCompact
-                ? compactSupplementContainerOffset(totalHeight)
-                : regularSupplementContainerOffset(totalHeight)
-
-            guard !isCompact,
-                  presentedSupplementStyle == .expanded
-            else {
-                return regularOffset
-            }
-
-            return totalHeight
-        }
-
-        private var presentedSupplementStyle: MediaPlayerSupplementPresentationStyle? {
-            #if os(tvOS)
-            containerState.presentedSupplementStyle
-            #else
-            containerState.selectedSupplement?.presentationStyle
-            #endif
         }
 
         private var dismissedSupplementContainerOffset: CGFloat {
@@ -329,14 +302,11 @@ extension VideoPlayer {
         private var supplementBottomAnchor: NSLayoutConstraint?
 
         private var centerOffset: CGFloat {
-            guard containerState.isCompact,
-                  let supplementBottomAnchor,
-                  let supplementHeightAnchor
-            else {
+            guard containerState.isCompact, let supplementBottomAnchor else {
                 return dismissedSupplementContainerOffset
             }
 
-            let supplementContainerHeight = supplementHeightAnchor.constant
+            let supplementContainerHeight = compactSupplementContainerOffset(view.bounds.height)
             let offsetPercentage = 1 - clamp(supplementBottomAnchor.constant.magnitude / supplementContainerHeight, min: 0, max: 1)
             let offset = (dismissedSupplementContainerOffset + EdgeInsets.edgePadding) * offsetPercentage
 
@@ -344,13 +314,10 @@ extension VideoPlayer {
         }
 
         private var compactPlayerBottomOffset: CGFloat {
-            guard containerState.isCompact,
-                  let supplementBottomAnchor,
-                  let supplementHeightAnchor
-            else {
+            guard containerState.isCompact, let supplementBottomAnchor else {
                 return dismissedSupplementContainerOffset
             }
-            let supplementContainerHeight = supplementHeightAnchor.constant
+            let supplementContainerHeight = compactSupplementContainerOffset(view.bounds.height)
             let offsetPercentage = 1 - clamp(supplementBottomAnchor.constant.magnitude / supplementContainerHeight, min: 0, max: 1)
             return (dismissedSupplementContainerOffset + EdgeInsets.edgePadding) * offsetPercentage
         }
@@ -406,10 +373,7 @@ extension VideoPlayer {
             location: CGPoint,
             state: UIGestureRecognizer.State
         ) {
-            guard let supplementBottomAnchor,
-                  let supplementHeightAnchor,
-                  let playerCompactBottomAnchor
-            else { return }
+            guard let supplementBottomAnchor, let playerCompactBottomAnchor else { return }
 
             let yDirection: CGFloat = translation.y > 0 ? -1 : 1
             let newOffset: CGFloat
@@ -485,11 +449,19 @@ extension VideoPlayer {
                 newOffset = verticalPanGestureStartConstant - (translation.y.magnitude * yDirection)
             }
 
-            clampedOffset = clamp(
-                newOffset,
-                min: -supplementHeightAnchor.constant,
-                max: -dismissedSupplementContainerOffset
-            )
+            if containerState.isCompact {
+                clampedOffset = clamp(
+                    newOffset,
+                    min: -compactSupplementContainerOffset(view.bounds.height),
+                    max: -dismissedSupplementContainerOffset
+                )
+            } else {
+                clampedOffset = clamp(
+                    newOffset,
+                    min: -regularSupplementContainerOffset,
+                    max: -dismissedSupplementContainerOffset
+                )
+            }
 
             if newOffset < clampedOffset {
                 let excess = clampedOffset - newOffset
@@ -511,25 +483,17 @@ extension VideoPlayer {
 
         func presentSupplementContainer(
             _ didPresent: Bool,
-            with panningState: (translation: CGFloat, velocity: CGFloat)? = nil,
-            presentationStyle: MediaPlayerSupplementPresentationStyle? = nil
+            with panningState: (translation: CGFloat, velocity: CGFloat)? = nil
         ) {
             guard !isPanning else { return }
-            guard let supplementBottomAnchor,
-                  let supplementHeightAnchor,
-                  let playerCompactBottomAnchor
-            else { return }
-
-            #if os(tvOS)
-            if !didPresent || presentationStyle != nil {
-                containerState.setPresentedSupplementStyle(didPresent ? presentationStyle : nil)
-            }
-            #endif
+            guard let supplementBottomAnchor, let playerCompactBottomAnchor else { return }
 
             if didPresent {
-                let presentedOffset = supplementContainerOffset(for: view.bounds.height)
-                supplementHeightAnchor.constant = presentedOffset
-                supplementBottomAnchor.constant = -presentedOffset
+                if containerState.isCompact {
+                    supplementBottomAnchor.constant = -compactSupplementContainerOffset(view.bounds.size.height)
+                } else {
+                    supplementBottomAnchor.constant = -regularSupplementContainerOffset
+                }
             } else {
                 supplementBottomAnchor.constant = -dismissedSupplementContainerOffset
             }
@@ -675,10 +639,9 @@ extension VideoPlayer {
             )
             supplementBottomAnchor = bottomAnchor
 
-            let constant = supplementContainerOffset(
-                for: view.bounds.height,
-                isCompact: isCompact
-            )
+            let constant = isCompact ?
+                compactSupplementContainerOffset(view.bounds.height) :
+                regularSupplementContainerOffset
             let heightAnchor = supplementContainerView.heightAnchor.constraint(equalToConstant: constant)
             supplementHeightAnchor = heightAnchor
 
@@ -732,22 +695,21 @@ extension VideoPlayer {
                   let playerCompactBottomAnchor
             else { return }
 
-            let presentedOffset = supplementContainerOffset(
-                for: newSize.height,
-                isCompact: isCompact
-            )
-
             if isCompact {
                 NSLayoutConstraint.deactivate(playerRegularConstraints)
                 NSLayoutConstraint.activate(playerCompactConstraints)
+
+                supplementBottomAnchor.constant = containerState
+                    .isPresentingSupplement ? -compactSupplementContainerOffset(newSize.height) : -dismissedSupplementContainerOffset
+                supplementHeightAnchor.constant = compactSupplementContainerOffset(newSize.height)
             } else {
                 NSLayoutConstraint.deactivate(playerCompactConstraints)
                 NSLayoutConstraint.activate(playerRegularConstraints)
-            }
 
-            supplementBottomAnchor.constant = containerState
-                .isPresentingSupplement ? -presentedOffset : -dismissedSupplementContainerOffset
-            supplementHeightAnchor.constant = presentedOffset
+                supplementBottomAnchor.constant = containerState
+                    .isPresentingSupplement ? -regularSupplementContainerOffset : -dismissedSupplementContainerOffset
+                supplementHeightAnchor.constant = regularSupplementContainerOffset
+            }
 
             playerCompactBottomAnchor.constant = compactPlayerBottomOffset
             containerState.centerOffsetBox.value = centerOffset
@@ -776,15 +738,21 @@ extension VideoPlayer {
         override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
             super.touchesBegan(touches, with: event)
 
+            // A soft / resting touch must NOT summon the controls while they're hidden in full screen —
+            // otherwise just resting a finger on the Siri Remote clickpad (e.g. hovering over Select without
+            // clicking) flashes the transport up. When hidden, ignore the touch entirely; the controls are
+            // revealed by a real CLICK — Select / Play-Pause / a directional press (see `pressesEnded`). This
+            // also strengthens the Prowlogue Skip Intro/Credits flow: with the overlay left hidden, a Select
+            // click still reaches `handleSelectEnded`'s skip intercept (no touch-wake to race it).
+            // When the controls are ALREADY visible, keep the normal behavior: poke the auto-hide timer so a
+            // resting touch keeps them up while the user is interacting.
+            guard containerState.isPresentingOverlay else { return }
+
             let now = CACurrentMediaTime()
             guard now - lastTouchPokeTime > 1.0 else { return }
             lastTouchPokeTime = now
 
-            if !containerState.isPresentingOverlay {
-                containerState.isPresentingOverlay = true
-            } else {
-                containerState.timer.poke()
-            }
+            containerState.timer.poke()
         }
 
         private func forwardPressesBegan(
@@ -849,6 +817,13 @@ extension VideoPlayer {
             }
         }
 
+        /// Route a USER play/pause toggle through SyncPlay when in a Watch Together group (so the explicit
+        /// press is broadcast to the group), otherwise change the local player directly as usual.
+        private func setUserPlaybackStatus(playing: Bool) {
+            if containerState.onUserPlayPauseIntent?(playing) == true { return }
+            manager.setPlaybackRequestStatus(status: playing ? .playing : .paused)
+        }
+
         private func handlePlayPauseEnded() {
             if containerState.isScrubbing {
                 containerState.cancelScrub()
@@ -856,25 +831,35 @@ extension VideoPlayer {
                 return
             }
 
-            if !containerState.isPresentingOverlay {
-                if manager.playbackRequestStatus == .paused {
-                    manager.setPlaybackRequestStatus(status: .playing)
-                }
-                containerState.isPresentingOverlay = true
-            } else {
-                switch manager.playbackRequestStatus {
-                case .playing:
-                    manager.setPlaybackRequestStatus(status: .paused)
-                case .paused:
-                    manager.setPlaybackRequestStatus(status: .playing)
-                }
+            // Toggle play/pause. When the controls are HIDDEN (full screen) do it SILENTLY — never summon the
+            // transport (the user wants a full-screen play/pause that leaves the UI hidden). When the controls are
+            // VISIBLE, toggle and poke the auto-hide timer as before. (Previously a hidden press always revealed
+            // the controls and only ever RESUMED — it couldn't pause without first showing the UI.)
+            let isVisible = containerState.isPresentingOverlay
+
+            switch manager.playbackRequestStatus {
+            case .playing:
+                setUserPlaybackStatus(playing: false)
+            case .paused:
+                setUserPlaybackStatus(playing: true)
             }
 
-            containerState.timer.poke()
+            if isVisible {
+                containerState.timer.poke()
+            }
         }
 
         private func handleSelectEnded(_ press: UIPress, event: UIPressesEvent?) {
             if !containerState.isPresentingOverlay {
+                // Prowlogue Skip Intro/Credits: in full screen, Select skips the active segment instead of
+                // revealing the transport bar. The affordance is non-focusable in this mode, so the press
+                // reaches the container here.
+                let skipState = SkipSegmentState.shared
+                if skipState.isShowing {
+                    skipState.skip()
+                    return
+                }
+
                 containerState.isPresentingOverlay = true
                 containerState.timer.poke()
                 return
@@ -886,9 +871,9 @@ extension VideoPlayer {
             } else if containerState.isProgressBarFocused {
                 switch manager.playbackRequestStatus {
                 case .playing:
-                    manager.setPlaybackRequestStatus(status: .paused)
+                    setUserPlaybackStatus(playing: false)
                 case .paused:
-                    manager.setPlaybackRequestStatus(status: .playing)
+                    setUserPlaybackStatus(playing: true)
                 }
                 containerState.timer.poke()
             } else {
@@ -908,6 +893,15 @@ extension VideoPlayer {
                 containerState.timer.poke()
             } else if containerState.isPresentingOverlay {
                 containerState.isPresentingOverlay = false
+            } else if SkipSegmentState.shared.isShowing {
+                // Prowlogue: in full screen with a Skip affordance showing, Back CANCELS a running auto-skip
+                // countdown (reverts to a manual pill); otherwise it dismisses the pill (suppressed until the
+                // controls are next shown) instead of closing the player.
+                if SkipSegmentState.shared.isCountingDown {
+                    SkipSegmentState.shared.cancelAutoSkip()
+                } else {
+                    SkipSegmentState.shared.dismiss()
+                }
             } else if Defaults[.confirmClose] {
                 containerState.isPresentingCloseConfirmation = true
             } else {

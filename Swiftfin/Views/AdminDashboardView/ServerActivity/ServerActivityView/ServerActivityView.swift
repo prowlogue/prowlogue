@@ -13,13 +13,15 @@ import SwiftUI
 // TODO: WebSocket
 struct ServerActivityView: View {
 
+    // MARK: - Router
+
     @Router
     private var router
 
+    // MARK: - State Objects
+
     @StateObject
-    private var usersViewModel = PagingLibraryViewModel(library: ServerUsersLibrary())
-    @StateObject
-    private var viewModel = PagingLibraryViewModel(library: ServerActivityLibrary())
+    private var viewModel = ServerActivityViewModel()
 
     // MARK: - Body
 
@@ -28,46 +30,30 @@ struct ServerActivityView: View {
             switch viewModel.state {
             case .content:
                 contentView
-            case .error:
-                viewModel.error.map(ErrorView.init)
+            case let .error(error):
+                ErrorView(error: error)
             case .initial, .refreshing:
                 ProgressView()
             }
         }
         .animation(.linear(duration: 0.2), value: viewModel.state)
         .navigationTitle(L10n.activity)
-        .toolbarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.inline)
         .refreshable {
-            await usersViewModel.refresh()
-            await viewModel.refresh()
+            viewModel.send(.refresh)
         }
         .topBarTrailing {
-            if viewModel.background.is(.gettingNextPage) {
+            if viewModel.backgroundStates.contains(.gettingNextPage) {
                 ProgressView()
             }
 
-            let systemImage = if #available(iOS 26, *) {
-                "line.3.horizontal.decrease"
-            } else {
-                "line.3.horizontal.decrease.circle"
-            }
-
-            Menu(
-                L10n.filters,
-                systemImage: systemImage
-            ) {
+            Menu(L10n.filters, systemImage: "line.3.horizontal.decrease.circle") {
                 startDateButton
                 userFilterButton
             }
         }
         .onFirstAppear {
-            Task {
-                await usersViewModel.refresh()
-                await viewModel.refresh()
-            }
-        }
-        .onChange(of: viewModel.environment) {
-            viewModel.refresh()
+            viewModel.send(.refresh)
         }
     }
 
@@ -83,10 +69,11 @@ struct ServerActivityView: View {
         } else {
             CollectionVGrid(
                 uniqueElements: viewModel.elements,
+                id: \.unwrappedIDHashOrZero,
                 layout: .columns(1)
             ) { log in
 
-                let user = usersViewModel.elements.first(
+                let user = viewModel.users.first(
                     property: \.id,
                     equalTo: log.userID
                 )
@@ -101,7 +88,7 @@ struct ServerActivityView: View {
                 }
             }
             .onReachedBottomEdge(offset: .offset(300)) {
-                viewModel.getNextPage()
+                viewModel.send(.getNextPage)
             }
             .frame(maxWidth: .infinity)
         }
@@ -111,7 +98,7 @@ struct ServerActivityView: View {
 
     @ViewBuilder
     private var userFilterButton: some View {
-        Picker(selection: $viewModel.environment.hasUserID) {
+        Picker(selection: $viewModel.hasUserId) {
             Label(
                 L10n.all,
                 systemImage: "line.3.horizontal"
@@ -132,7 +119,7 @@ struct ServerActivityView: View {
         } label: {
             Text(L10n.type)
 
-            if let hasUserID = viewModel.environment.hasUserID {
+            if let hasUserID = viewModel.hasUserId {
                 Text(hasUserID ? L10n.users : L10n.system)
                 Image(systemName: hasUserID ? "person" : "gearshape")
 
@@ -149,11 +136,11 @@ struct ServerActivityView: View {
     @ViewBuilder
     private var startDateButton: some View {
         Button {
-            router.route(to: .activityFilters(environment: $viewModel.environment))
+            router.route(to: .activityFilters(viewModel: viewModel))
         } label: {
             Text(L10n.startDate)
 
-            if let startDate = viewModel.environment.minDate {
+            if let startDate = viewModel.minDate {
                 Text(startDate.formatted(date: .numeric, time: .omitted))
             } else {
                 Text(verbatim: .emptyDash)

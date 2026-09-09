@@ -14,7 +14,7 @@ extension NavigationCoordinator {
     struct Router {
 
         let navigationCoordinator: NavigationCoordinator?
-        let isRootOfPath: Bool
+        let rootCoordinator: RootCoordinator?
 
         func route(
             to route: NavigationRoute,
@@ -26,6 +26,12 @@ extension NavigationCoordinator {
             route.transitionType = transition ?? route.transitionType
             navigationCoordinator?.push(route)
         }
+
+        func root(
+            _ root: RootItem
+        ) {
+            rootCoordinator?.root(root)
+        }
     }
 }
 
@@ -36,10 +42,6 @@ struct Router: DynamicProperty {
     struct Wrapper {
         let router: NavigationCoordinator.Router
         let dismiss: DismissAction
-
-        var isRootOfPath: Bool {
-            router.isRootOfPath
-        }
 
         func route(
             to route: NavigationRoute,
@@ -75,25 +77,23 @@ struct Router: DynamicProperty {
                 in: namespace
             )
         }
+
+        func root(
+            _ root: RootItem
+        ) {
+            router.root(root)
+        }
     }
 
     // `.dismiss` causes changes on disappear
     @Environment(\.self)
     private var environment
 
-    private let wrapperBox: PublishedBox<Wrapper?> = .init(initialValue: nil)
-
     var wrappedValue: Wrapper {
-        if let wrapper = wrapperBox.value {
-            return wrapper
-        }
-
-        let value = Wrapper(
+        .init(
             router: environment.router,
             dismiss: environment.dismiss
         )
-        wrapperBox.value = value
-        return value
     }
 }
 
@@ -102,6 +102,6 @@ extension EnvironmentValues {
     @Entry
     var router: NavigationCoordinator.Router = .init(
         navigationCoordinator: nil,
-        isRootOfPath: false
+        rootCoordinator: nil
     )
 }

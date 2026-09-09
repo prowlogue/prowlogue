@@ -11,20 +11,14 @@ import JellyfinAPI
 /// A structure representing a collection of item filters
 struct ItemFilterCollection: Hashable, Storable {
 
-    var audioLanguages: [ItemLanguage] = []
-    var categories: [ChannelCategory] = []
     var genres: [ItemGenre] = []
     var itemTypes: [BaseItemKind] = []
     var letter: [ItemLetter] = []
-    var officialRatings: [ItemOfficialRating] = []
     var sortBy: [ItemSortBy] = [ItemSortBy.sortName]
     var sortOrder: [ItemSortOrder] = [ItemSortOrder.ascending]
-    var subtitleLanguages: [ItemLanguage] = []
     var tags: [ItemTag] = []
     var traits: [ItemTrait] = []
     var years: [ItemYear] = []
-
-    var query: String?
 
     /// The default collection of filters
     static let `default`: ItemFilterCollection = .init()
@@ -42,7 +36,6 @@ struct ItemFilterCollection: Hashable, Storable {
     /// These may be altered when used to better represent all
     /// available values within the current context.
     static let all: ItemFilterCollection = .init(
-        categories: ChannelCategory.allCases,
         letter: ItemLetter.allCases,
         sortBy: ItemSortBy.supportedCases,
         sortOrder: ItemSortOrder.allCases,
@@ -54,16 +47,6 @@ struct ItemFilterCollection: Hashable, Storable {
     }
 
     var hasQueryableFilters: Bool {
-        audioLanguages.isNotEmpty ||
-            categories.isNotEmpty ||
-            genres.isNotEmpty ||
-            itemTypes.isNotEmpty ||
-            letter.isNotEmpty ||
-            officialRatings.isNotEmpty ||
-            subtitleLanguages.isNotEmpty ||
-            tags.isNotEmpty ||
-            traits.isNotEmpty ||
-            years.isNotEmpty ||
-            !query.isNilOrEmpty
+        genres.isNotEmpty || itemTypes.isNotEmpty || letter.isNotEmpty || tags.isNotEmpty || traits.isNotEmpty || years.isNotEmpty
     }
 }

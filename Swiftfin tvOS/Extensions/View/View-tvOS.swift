@@ -38,12 +38,6 @@ extension View {
     func prefersStatusBarHidden(_ hidden: Bool = true) -> some View {
         self
     }
-
-    /// - Important: This does nothing on tvOS.
-    @ViewBuilder
-    func searchFocused(_ isFocused: FocusState<Bool>.Binding) -> some View {
-        self
-    }
 }
 
 extension EnvironmentValues {

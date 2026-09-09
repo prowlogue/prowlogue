@@ -12,8 +12,7 @@ import SwiftUI
 func SecureField(
     _ title: String,
     text: Binding<String>,
-    maskToggle: SwiftUI.SecureField<EmptyView>.MaskToggleBehavior,
-    onSubmit: (() -> Void)? = nil
+    maskToggle: SwiftUI.SecureField<EmptyView>.MaskToggleBehavior
 ) -> some View {
     #if os(iOS)
     if maskToggle == .enabled {
@@ -21,17 +20,11 @@ func SecureField(
             title,
             text: text
         )
-        .onSubmit {
-            onSubmit?()
-        }
     } else {
         SecureField(
             title,
             text: text
         )
-        .onSubmit {
-            onSubmit?()
-        }
     }
     #else
     SecureField(

@@ -7,6 +7,7 @@
 //
 
 import Defaults
+import Engine
 import JellyfinAPI
 import SwiftUI
 import UniformTypeIdentifiers
@@ -45,22 +46,11 @@ struct ItemSubtitleUploadView: View {
 
             Section {
                 StateAdapter(initialValue: false) { isPresentingFileUpload in
-                    Button {
+                    Button(selectedFile == nil ? L10n.uploadFile : L10n.replaceSubtitle) {
                         isPresentingFileUpload.wrappedValue = true
-                    } label: {
-                        Text(selectedFile == nil ? L10n.uploadFile : L10n.replaceSubtitle)
-                            .frame(maxWidth: .infinity)
                     }
-                    .listRowInsets(.zero)
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                    .fontWeight(.semibold)
-                    .backport
-                    .buttonStyle(.glassProminent.shadow(false))
-                    .tint(accentColor)
-                    #if os(iOS)
-                    .controlSize(.large)
-                    #endif
+                    .buttonStyle(.primary)
+                    .foregroundStyle(accentColor.overlayColor, accentColor)
                     .fileImporter(
                         isPresented: isPresentingFileUpload,
                         allowedContentTypes: SubtitleFormat.allCases.filter(\.isText).compactMap(\.utType)
@@ -71,6 +61,7 @@ struct ItemSubtitleUploadView: View {
             }
         }
         .navigationTitle(L10n.subtitle)
+        .backport
         .toolbarTitleDisplayMode(.inline)
         .onReceive(viewModel.events) { event in
             switch event {
@@ -88,7 +79,7 @@ struct ItemSubtitleUploadView: View {
             if viewModel.background.is(.updating) {
                 ProgressView()
             } else {
-                let saveAction: () -> Void = {
+                Button(L10n.save) {
                     guard let selectedFile else { return }
                     viewModel.upload(
                         file: selectedFile,
@@ -96,17 +87,7 @@ struct ItemSubtitleUploadView: View {
                         isHearingImpaired: isHearingImpaired
                     )
                 }
-
-                Group {
-                    if #available(iOS 26, *) {
-                        Button(L10n.save, role: .confirm, action: saveAction)
-                    } else {
-                        Button(L10n.save, action: saveAction)
-                            .backport
-                            .buttonStyle(.glassProminent)
-                            .controlSize(.small)
-                    }
-                }
+                .buttonStyle(.toolbarPill)
                 .disabled(selectedFile == nil)
             }
         }

@@ -7,6 +7,7 @@
 //
 
 import Defaults
+import Engine
 import JellyfinAPI
 import Mantis
 import SwiftUI
@@ -123,6 +124,7 @@ struct ServerUserDetailsView: View {
                 }
             }
         }
+        .backport
         .toolbarTitleDisplayMode(.inline)
         .navigationTitle(L10n.user)
         .topBarTrailing {

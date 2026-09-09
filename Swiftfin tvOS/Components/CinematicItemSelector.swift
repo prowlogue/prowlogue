@@ -6,13 +6,14 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
+import Combine
 import JellyfinAPI
 import SwiftUI
 
-struct CinematicItemSelector<Item: Poster, TopContent: View>: View {
+// TODO: make new protocol for cinematic view image provider
+// TODO: better name
 
-    @Environment(\.frameForParentView)
-    private var frameForParentView
+struct CinematicItemSelector<Item: Poster>: View {
 
     @FocusState
     private var isSectionFocused
@@ -20,109 +21,89 @@ struct CinematicItemSelector<Item: Poster, TopContent: View>: View {
     @FocusedValue(\.focusedPoster)
     private var focusedPoster
 
-    @State
-    private var selectedPoster: AnyPoster?
+    @StateObject
+    private var viewModel: CinematicBackgroundView.Proxy = .init()
 
+    private var topContent: (Item) -> any View
+    private var itemContent: (Item) -> any View
+    private var trailingContent: () -> any View
     private let action: (Item) -> Void
-    private let items: [Item]
-    private let topContent: (Item) -> TopContent
 
-    init(
-        items: [Item],
-        action: @escaping (Item) -> Void,
-        @ViewBuilder topContent: @escaping (Item) -> TopContent
-    ) {
-        self.items = items
-        self.action = action
-        self.topContent = topContent
-    }
-
-    private var parentFrame: CGRect {
-        frameForParentView[.scrollView, default: .zero].frame
-    }
-
-    private var resolvedSelectedPoster: AnyPoster? {
-        selectedPoster ?? items.first.map { AnyPoster($0) }
-    }
-
-    private var selectedItem: Item? {
-        resolvedSelectedPoster?._poster as? Item
-    }
-
-    private func updateSelectedPoster() {
-        guard isSectionFocused, let focusedPoster else { return }
-        selectedPoster = focusedPoster
-    }
+    let items: [Item]
 
     var body: some View {
-        CinematicContentGroupContainer {
-            VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 10) {
 
-                if let selectedItem {
-                    topContent(selectedItem)
-                        .id(selectedItem.hashValue)
-                        .transition(.opacity)
-                }
-
-                // TODO: fix intrinsic content sizing without frame
-                PosterHStack(
-                    elements: items,
-                    displayType: .landscape,
-                    size: .medium
-                ) { item, _ in
-                    action(item)
-                }
-                .frame(height: 400)
+            if let focusedPoster, let focusedItem = focusedPoster._poster as? Item {
+                topContent(focusedItem)
+                    .eraseToAnyView()
+                    .id(focusedItem.hashValue)
+                    .transition(.opacity)
             }
+
+            // TODO: fix intrinsic content sizing without frame
+            PosterHStack(
+                type: .landscape,
+                items: items,
+                action: action,
+                label: itemContent
+            )
+            .frame(height: 400)
         }
+        .frame(height: UIScreen.main.bounds.height - 75, alignment: .bottomLeading)
+        .frame(maxWidth: .infinity)
         .background(alignment: .top) {
-            FadeContentTransitionView(
-                item: resolvedSelectedPoster,
-                debounce: 0.5
-            ) { item in
-                ImageView(item?.landscapeImageSources(environment: .default) ?? [])
-                    .failure {
-                        EmptyView()
-                    }
-                    .aspectRatio(contentMode: .fill)
-            }
+            CinematicBackgroundView(
+                viewModel: viewModel,
+                initialItem: items.first
+            )
             .overlay {
                 Color.black
-                    .mask(gradient: .linear) {
+                    .maskLinearGradient {
                         (location: 0.5, opacity: 0)
                         (location: 0.6, opacity: 0.4)
                         (location: 1, opacity: 1)
                     }
             }
-            .frame(height: parentFrame.height)
-            .mask(gradient: .linear) {
-                (location: 0.82, opacity: 1)
-                (location: 0.94, opacity: 0.55)
+            .frame(height: UIScreen.main.bounds.height)
+            .maskLinearGradient {
+                (location: 0.9, opacity: 1)
                 (location: 1, opacity: 0)
             }
         }
         .onChange(of: focusedPoster) {
-            updateSelectedPoster()
-        }
-        .onChange(of: isSectionFocused) {
-            updateSelectedPoster()
+            guard let focusedPoster, isSectionFocused else { return }
+            viewModel.select(item: focusedPoster)
         }
         .focusSection()
         .focused($isSectionFocused)
     }
 }
 
-extension CinematicItemSelector where TopContent == EmptyView {
+extension CinematicItemSelector {
 
-    init(
-        items: [Item],
-        action: @escaping (Item) -> Void = { _ in }
-    ) {
+    init(items: [Item], action: @escaping (Item) -> Void = { _ in }) {
         self.init(
-            items: items,
-            action: action
-        ) { _ in
-            EmptyView()
-        }
+            topContent: { _ in EmptyView() },
+            itemContent: { _ in EmptyView() },
+            trailingContent: { EmptyView() },
+            action: action,
+            items: items
+        )
+    }
+}
+
+extension CinematicItemSelector {
+
+    func topContent(@ViewBuilder _ content: @escaping (Item) -> any View) -> Self {
+        copy(modifying: \.topContent, with: content)
+    }
+
+    func content(@ViewBuilder _ content: @escaping (Item) -> any View) -> Self {
+        copy(modifying: \.itemContent, with: content)
+    }
+
+    func trailingContent(@ViewBuilder _ content: @escaping () -> some View) -> Self {
+        copy(modifying: \.trailingContent, with: content)
     }
 }

@@ -11,69 +11,6 @@ import CryptoKit
 import Foundation
 import SwiftUI
 
-extension String: Displayable {
-
-    var displayTitle: String {
-        self
-    }
-}
-
-extension String: @retroactive Identifiable {
-
-    public var id: String {
-        self
-    }
-}
-
-extension String: LibraryElement {
-
-    func makeBody(
-        libraryStyle: LibraryStyle,
-        action: (() -> Void)?
-    ) -> some View {
-        StringLibraryListElement(
-            value: self,
-            action: action
-        )
-    }
-}
-
-private struct StringLibraryListElement: View {
-
-    @Environment(\.isEditing)
-    private var isEditing
-    @Environment(\.isSelected)
-    private var isSelected
-
-    let value: String
-    var action: (() -> Void)?
-
-    var body: some View {
-        Button {
-            action?()
-        } label: {
-            HStack {
-                Text(value.displayTitle)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .foregroundStyle(
-                        isEditing ? (isSelected ? .primary : .secondary) : .primary
-                    )
-
-                if isEditing {
-                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                        .resizable()
-                        .aspectRatio(1, contentMode: .fit)
-                        .frame(width: 24, height: 24)
-                        .foregroundStyle(isSelected ? Color.accentColor : .secondary)
-                }
-            }
-        }
-        .foregroundStyle(.primary, .secondary)
-    }
-}
-
 extension String {
 
     static let alphanumeric = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -136,19 +73,16 @@ extension String {
     }
 
     var initials: String {
-        split(separator: Self.space)
+        split(separator: " ")
             .compactMap(\.first)
-            .reduce(Self.empty, +)
+            .reduce("", +)
     }
 
-    /// --
     static let emptyDash = "--"
-    /// --:--
+
     static let emptyRuntime = "--:--"
-    /// ""
+
     static let empty = ""
-    /// " "
-    static let space = " "
 
     static let tab = "\u{0009}"
     /// —
@@ -159,15 +93,8 @@ extension String {
     static let hyphen = "\u{002D}"
     /// ...
     static let ellipsis = "\u{2026}"
-    /// •
-    static let bullet = "\u{2022}"
     /// x
     static let multiply = "\u{00D7}"
-
-    /// A x B
-    func multiply(by value: String) -> String {
-        "\(self) \(Self.multiply) \(value)"
-    }
 
     var shortFileName: String {
         (split(separator: "/").last?.description ?? self)

@@ -7,7 +7,7 @@
 //
 
 import Combine
-import FactoryKit
+import Factory
 import Foundation
 import Get
 import JellyfinAPI
@@ -21,7 +21,10 @@ import SwiftUI
 //       - won't require deleting and re-signing in user for password changes
 //       - account for local device auth required
 // TODO: ignore NSURLErrorDomain Code=-999 cancelled error on sign in
-//       - need to make NSError wrappers anyways
+//       - need to make NSError wrappres anyways
+
+// Note: UserDto in StoredValues so that it doesn't need to be passed
+//       around along with the user UserState. Was just easy
 
 @MainActor
 @Stateful
@@ -94,8 +97,8 @@ final class UserSignInViewModel: ObservableObject {
     @Published
     private(set) var serverDisclaimer: String? = nil
 
-    private let logger = Logger.swiftfin()
-    private var cancellables = Set<AnyCancellable>()
+    let logger = Logger.swiftfin()
+    var cancellables = Set<AnyCancellable>()
 
     let server: ServerState
 

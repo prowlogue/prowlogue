@@ -18,12 +18,12 @@ extension ActiveSessionsView {
         private var currentDate: Date
 
         @ObservedObject
-        var viewModel: SessionViewModel
+        var box: BindingBox<SessionInfoDto?>
 
         let action: () -> Void
 
         private var session: SessionInfoDto {
-            viewModel.session
+            box.value ?? .init()
         }
 
         private var isPlaying: Bool {
@@ -40,7 +40,7 @@ extension ActiveSessionsView {
                 )
                 .frame(width: 60)
                 .frame(minHeight: 90)
-                .subtleShadow()
+                .posterShadow()
             } else {
                 ZStack {
                     session.device.clientColor
@@ -52,7 +52,7 @@ extension ActiveSessionsView {
                 }
                 .posterStyle(.square)
                 .frame(width: 60, height: 60)
-                .subtleShadow()
+                .posterShadow()
             }
         }
 
@@ -112,7 +112,7 @@ extension ActiveSessionsView {
         }
 
         var body: some View {
-            ListRow(insets: .init(vertical: 8, horizontal: EdgeInsets.edgePadding)) {
+            ListRow(insets: .init(vertical: isPlaying ? 8 : 12, horizontal: EdgeInsets.edgePadding)) {
                 rowLeading
             } content: {
                 if let nowPlayingItem = session.nowPlayingItem, let playState = session.playState {
@@ -123,7 +123,6 @@ extension ActiveSessionsView {
             } action: {
                 action()
             }
-            .withViewContext(.isListRowSeparatorVisible)
         }
     }
 }

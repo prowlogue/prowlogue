@@ -20,9 +20,10 @@ extension SelectUserView {
         private var imageView: some View {
             RelativeSystemImageView(systemName: "plus")
                 .foregroundStyle(Color.secondary)
+                .background(.thinMaterial)
                 .aspectRatio(1, contentMode: .fit)
-                .backport
-                .glassEffect(in: .circle)
+                .clipShape(.circle)
+                .posterShadow()
         }
 
         @ViewBuilder
@@ -48,9 +49,10 @@ extension SelectUserView {
                 #endif
             }
             .foregroundStyle(.primary, .secondary)
-            .buttonBorderShape(.circle)
             #if os(tvOS)
-            .buttonStyle(.borderless)
+                .buttonStyle(.borderless)
+                .backport
+                .buttonBorderShape(.circle)
             #endif
         }
 

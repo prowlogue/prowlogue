@@ -6,13 +6,14 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
+import Factory
 import SwiftUI
 
 extension VideoPlayer.PlaybackControls.Toolbar.ActionButtons {
 
     struct Audio: View {
 
-        @ViewContextContains(.isInMenu)
+        @Environment(\.isInMenu)
         private var isInMenu
 
         @EnvironmentObject
@@ -47,7 +48,10 @@ extension VideoPlayer.PlaybackControls.Toolbar.ActionButtons {
 
         var body: some View {
             if let playbackItem = manager.playbackItem {
-                Menu {
+                Menu(
+                    L10n.audio,
+                    systemImage: systemImage
+                ) {
                     if isInMenu {
                         content(playbackItem: playbackItem)
                     } else {
@@ -55,13 +59,21 @@ extension VideoPlayer.PlaybackControls.Toolbar.ActionButtons {
                             content(playbackItem: playbackItem)
                         }
                     }
-                } label: {
-                    Label(L10n.audio, systemImage: systemImage)
                 }
                 .videoPlayerActionButtonTransition()
                 .assign(playbackItem.$selectedAudioStreamIndex, to: $selectedAudioStreamIndex)
-                .onChange(of: selectedAudioStreamIndex) {
-                    playbackItem.selectedAudioStreamIndex = selectedAudioStreamIndex
+                .backport
+                .onChange(of: selectedAudioStreamIndex) { _, newValue in
+                    #if os(tvOS)
+                    // Remember a genuine USER pick (for the current series, this session). The `.assign` sync
+                    // above sets `selectedAudioStreamIndex` equal to the item's value on load — skip those so
+                    // only real choices are remembered, never an episode's initial/default selection.
+                    if newValue != playbackItem.selectedAudioStreamIndex {
+                        Container.shared.prowlogueSeriesAudioMemory()
+                            .recordUserPick(index: newValue, in: playbackItem)
+                    }
+                    #endif
+                    playbackItem.selectedAudioStreamIndex = newValue
                 }
             }
         }

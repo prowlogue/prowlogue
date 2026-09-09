@@ -14,29 +14,58 @@ extension NavigationRoute {
     // MARK: - Item Editing
 
     #if os(iOS)
-    static func addItemElement<Editor: ItemComponentEditor>(
-        viewModel: ItemComponentEditorViewModel<Editor>
-    ) -> NavigationRoute {
+    static func addGenre(viewModel: GenreEditorViewModel) -> NavigationRoute {
         NavigationRoute(
-            id: "addItemElement-\(Editor.self)",
+            id: "addGenre",
             style: .sheet
         ) {
-            AddItemElementView(viewModel: viewModel)
+            AddItemElementView(viewModel: viewModel, type: .genres)
+        }
+    }
+
+    static func addPeople(viewModel: PeopleEditorViewModel) -> NavigationRoute {
+        NavigationRoute(
+            id: "addPeople",
+            style: .sheet
+        ) {
+            AddItemElementView(viewModel: viewModel, type: .people)
+        }
+    }
+
+    static func addStudio(viewModel: StudioEditorViewModel) -> NavigationRoute {
+        NavigationRoute(
+            id: "addStudio",
+            style: .sheet
+        ) {
+            AddItemElementView(viewModel: viewModel, type: .studios)
+        }
+    }
+
+    static func addTag(viewModel: TagEditorViewModel) -> NavigationRoute {
+        NavigationRoute(
+            id: "addTag",
+            style: .sheet
+        ) {
+            AddItemElementView(viewModel: viewModel, type: .tags)
         }
     }
     #endif
 
     @MainActor
     static func castAndCrew(people: [BaseItemPerson], itemID: String?) -> NavigationRoute {
-        let id = itemID == nil ? "castAndCrew" : "castAndCrew-\(itemID!)"
-        let library = StaticLibrary(
+        let id: String? = itemID == nil ? nil : "castAndCrew-\(itemID!)"
+        let viewModel = PagingLibraryViewModel(
             title: L10n.castAndCrew.localizedCapitalized,
             id: id,
-            elements: people
+            people
         )
 
         return NavigationRoute(id: "castAndCrew") {
-            PagingLibraryView(library: library)
+            #if os(tvOS)
+            NativePagingLibraryView(viewModel: viewModel)
+            #else
+            PagingLibraryView(viewModel: viewModel)
+            #endif
         }
     }
 
@@ -44,17 +73,18 @@ extension NavigationRoute {
     @MainActor
     static func editGenres(item: BaseItemDto) -> NavigationRoute {
         NavigationRoute(id: "editGenres") {
-            EditItemElementView(
-                viewModel: ItemComponentEditorViewModel(
-                    editor: GenreComponentEditor(),
-                    item: item
-                )
+            EditItemElementView<String>(
+                viewModel: GenreEditorViewModel(item: item),
+                type: .genres,
+                route: { router, viewModel in
+                    router.route(to: .addGenre(viewModel: viewModel as! GenreEditorViewModel))
+                }
             )
         }
     }
 
     @MainActor
-    static func editMetadata(viewModel: ItemEditorViewModel) -> NavigationRoute {
+    static func editMetadata(viewModel: ItemEditorViewModel<BaseItemDto>) -> NavigationRoute {
         NavigationRoute(
             id: "editMetadata",
             style: .sheet
@@ -66,11 +96,12 @@ extension NavigationRoute {
     @MainActor
     static func editPeople(item: BaseItemDto) -> NavigationRoute {
         NavigationRoute(id: "editPeople") {
-            EditItemElementView(
-                viewModel: ItemComponentEditorViewModel(
-                    editor: PeopleComponentEditor(),
-                    item: item
-                )
+            EditItemElementView<BaseItemPerson>(
+                viewModel: PeopleEditorViewModel(item: item),
+                type: .people,
+                route: { router, viewModel in
+                    router.route(to: .addPeople(viewModel: viewModel as! PeopleEditorViewModel))
+                }
             )
         }
     }
@@ -78,11 +109,12 @@ extension NavigationRoute {
     @MainActor
     static func editStudios(item: BaseItemDto) -> NavigationRoute {
         NavigationRoute(id: "editStudios") {
-            EditItemElementView(
-                viewModel: ItemComponentEditorViewModel(
-                    editor: StudioComponentEditor(),
-                    item: item
-                )
+            EditItemElementView<NameIDPair>(
+                viewModel: StudioEditorViewModel(item: item),
+                type: .studios,
+                route: { router, viewModel in
+                    router.route(to: .addStudio(viewModel: viewModel as! StudioEditorViewModel))
+                }
             )
         }
     }
@@ -99,11 +131,12 @@ extension NavigationRoute {
     @MainActor
     static func editTags(item: BaseItemDto) -> NavigationRoute {
         NavigationRoute(id: "editTags") {
-            EditItemElementView(
-                viewModel: ItemComponentEditorViewModel(
-                    editor: TagComponentEditor(),
-                    item: item
-                )
+            EditItemElementView<String>(
+                viewModel: TagEditorViewModel(item: item),
+                type: .tags,
+                route: { router, viewModel in
+                    router.route(to: .addTag(viewModel: viewModel as! TagEditorViewModel))
+                }
             )
         }
     }
@@ -149,32 +182,57 @@ extension NavigationRoute {
         }
     }
 
-    @MainActor
     static func item(item: BaseItemDto) -> NavigationRoute {
-        let provider = ItemContentGroupProvider(item: item)
-
-        return NavigationRoute(
+        NavigationRoute(
             id: "item-\(item.id ?? "Unknown")",
             withNamespace: { .push(.zoom(sourceID: "item", namespace: $0)) }
         ) {
-            ItemView(provider: provider)
+            #if os(tvOS)
+            ProwlogueItemView(item: item)
+            #else
+            ItemView(item: item)
+            #endif
         }
     }
 
-    @MainActor
-    static func item(id: String) -> NavigationRoute {
-        let provider = ItemContentGroupProvider(id: id)
+    #if os(tvOS)
+    /// A virtual collection page (Favorites / Watchlist): the cinematic collection-style detail, with
+    /// rows grouped by type (Movies, TV Shows, Actors), filtered by `traits` (e.g. `.isFavorite` / `.likes`).
+    static func mediaCollection(
+        title: String,
+        id: String,
+        itemTypes: [BaseItemKind],
+        traits: [ItemTrait]
+    ) -> NavigationRoute {
+        NavigationRoute(
+            id: "mediaCollection-\(id)",
+            withNamespace: { .push(.zoom(sourceID: "item", namespace: $0)) }
+        ) {
+            ProwlogueItemView(
+                virtualCollection: title,
+                id: id,
+                itemTypes: itemTypes,
+                traits: traits
+            )
+        }
+    }
+    #endif
 
-        return NavigationRoute(
+    static func item(id: String) -> NavigationRoute {
+        NavigationRoute(
             id: "item-\(id)",
             withNamespace: { .push(.zoom(sourceID: "item", namespace: $0)) }
         ) {
-            ItemView(provider: provider)
+            #if os(tvOS)
+            ProwlogueItemView(item: .init(id: id))
+            #else
+            ItemView(item: .init(id: id))
+            #endif
         }
     }
 
     #if os(iOS)
-    static func itemEditor(viewModel: ItemEditorViewModel) -> NavigationRoute {
+    static func itemEditor(viewModel: ItemEditorViewModel<BaseItemDto>) -> NavigationRoute {
         NavigationRoute(
             id: "itemEditor",
             style: .sheet
@@ -230,7 +288,7 @@ extension NavigationRoute {
 
     #endif
 
-    static func itemMetadataRefresh(viewModel: ItemEditorViewModel) -> NavigationRoute {
+    static func itemMetadataRefresh(viewModel: ItemEditorViewModel<BaseItemDto>) -> NavigationRoute {
         NavigationRoute(
             id: "itemMetadataRefresh",
             style: .sheet
@@ -244,7 +302,11 @@ extension NavigationRoute {
             id: "itemOverview",
             style: .sheet
         ) {
+            #if os(tvOS)
+            ProwlogueItemOverviewView(item: item)
+            #else
             ItemOverviewView(item: item)
+            #endif
         }
     }
 }

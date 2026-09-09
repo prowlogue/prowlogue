@@ -38,20 +38,30 @@ struct PlaybackRateMediaPlayerSupplement: MediaPlayerSupplement {
                     Button {
                         manager.setRate(rate: manager.rate + 0.05)
                     } label: {
-                        // swiftlint:disable:next hard_coded_display_string
-                        Text("+")
-                            .fontWeight(.semibold)
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 7)
+                                .foregroundStyle(.white)
+
+                            // swiftlint:disable:next hard_coded_display_string
+                            Text("+")
+                                .fontWeight(.semibold)
+                                .foregroundColor(.black)
+                        }
                     }
-                    .buttonStyle(.supplementAction)
                     .frame(maxWidth: .infinity)
 
                     Button {
                         manager.setRate(rate: manager.rate - 0.05)
                     } label: {
-                        Text(String.hyphen)
-                            .fontWeight(.semibold)
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 7)
+                                .foregroundStyle(.white)
+
+                            Text(String.hyphen)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.black)
+                        }
                     }
-                    .buttonStyle(.supplementAction)
                     .frame(maxWidth: .infinity)
                 }
                 .frame(height: 40)

@@ -10,7 +10,7 @@ import SwiftUI
 
 // TODO: make a `StyledView`
 
-struct SliderContainer<Value: BinaryFloatingPoint, Content: SliderContentView>: PlatformViewRepresentable {
+struct SliderContainer<Value: BinaryFloatingPoint, Content: SliderContentView>: UIViewRepresentable {
 
     private var value: Binding<Value>
     private let total: Value

@@ -69,7 +69,7 @@ private struct PlatformForm<Image: View, Content: View>: PlatformView {
         Form {
             content
         }
-        .toolbarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.inline)
     }
 
     var tvOSView: some View {
@@ -80,6 +80,7 @@ private struct PlatformForm<Image: View, Content: View>: PlatformView {
             Form {
                 content
             }
+            .backport
             .scrollClipDisabled()
             .mask(extendedBy: .init(vertical: 20, horizontal: 100)) {
                 VStack(spacing: 0) {
