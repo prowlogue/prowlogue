@@ -46,16 +46,17 @@ extension MediaView {
         private func setImageSources() {
             Task { @MainActor in
                 #if os(tvOS)
-                // tvOS: every tile shows a random BACKDROP of its category's content (clean art, no
-                // baked-in titles). Live TV has no "random" items, so it uses its own backdrop.
+                // tvOS tiles normally read from `viewModel.tileImageSources` (see body). This path is
+                // kept as a fallback for any non-VM-driven use: prefer the Jellyfin library image,
+                // optionally fall back to a random content backdrop.
                 if case let MediaViewModel.MediaType.liveTV(item) = type {
-                    // Prefer a backdrop, fall back to the Live TV view's primary; if neither exists the
-                    // tile renders the styled gradient + icon below.
                     if item.backdropImageTags?.isNotEmpty == true {
                         self.imageSources = [item.imageSource(.backdrop, maxWidth: 800)]
                     } else {
                         self.imageSources = [item.imageSource(.primary, maxWidth: 800)]
                     }
+                } else if !useRandomImage, case let MediaViewModel.MediaType.collectionFolder(item) = type {
+                    self.imageSources = [item.imageSource(.primary, maxWidth: 800)]
                 } else {
                     self.imageSources = await (try? viewModel.randomItemImageSources(for: type)) ?? []
                 }
@@ -100,14 +101,14 @@ extension MediaView {
         }
 
         #if os(tvOS)
-        // tvOS: the backdrop comes from the shared view model (resolved + prefetched at launch / on tab
-        // exit), so it's already cached when shown — no on-screen fetch/blur-in.
+        // tvOS: tile art comes from the shared view model (library Primary by default, or random
+        // content when enabled) — resolved + prefetched, so it's already cached on screen.
         private var tvImageSources: [ImageSource] {
             guard let id = type.id else { return [] }
             return viewModel.tileImageSources[id] ?? []
         }
 
-        // tvOS: a clean backdrop card with the label UNDERNEATH (never written over the artwork), so
+        // tvOS: image card with the library title UNDERNEATH (never written over the artwork), so
         // the selection focus ring stays around just the image — matching the home poster rows.
         var body: some View {
             VStack(spacing: 12) {

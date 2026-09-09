@@ -147,16 +147,12 @@ struct MediaView: View {
             #endif
         }
         #if os(tvOS)
-        // Re-roll the random backdrops the MOMENT the user LEAVES the Media tab (selection changes away
-        // from "media"). tvOS keeps the off-screen tab alive, so the new wallpapers fetch + prefetch in
-        // the background and are already in place when the user returns — no visible swap on arrival.
+        // When "Random image" is on, re-roll content backdrops the MOMENT the user LEAVES the Media tab.
+        // Library-associated images are stable, so skip the re-roll in that mode.
         .backport
             .onChange(of: tabCoordinator.selectedTabID) { oldID, newID in
                 // Re-roll ONLY on the single transition AWAY from Media (old == "media", new != "media").
-                // Browsing among other tabs afterward must NOT keep re-rolling — the backdrops resolved on
-                // that exit are exactly what shows on return, untouched until the user comes back and
-                // leaves again.
-                if oldID == "media", newID != "media" {
+                if oldID == "media", newID != "media", Defaults[.Customization.Library.randomImage] {
                     Task { await viewModel.prepareTileImages(reloadList: false) }
                 }
             }

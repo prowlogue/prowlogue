@@ -186,7 +186,7 @@ final class MediaViewModel: ViewModel {
     #if os(tvOS)
 
     /// One-shot background warm at launch (called from `HomeView`, mirroring requests/search/livetv):
-    /// loads the tile list, resolves each tile's random backdrop, and prefetches them into the cache —
+    /// loads the tile list, resolves each tile's image, and prefetches them into the cache —
     /// so the FIRST visit to the Media tab shows the artwork instantly instead of fetching + blurring in.
     func prefetchIfNeeded() async {
         guard !hasPrefetched else { return }
@@ -194,9 +194,9 @@ final class MediaViewModel: ViewModel {
         await prepareTileImages(reloadList: true)
     }
 
-    /// Resolves each tile's random backdrop image source and warms the cache. `reloadList` rebuilds the
+    /// Resolves each tile's image source and warms the cache. `reloadList` rebuilds the
     /// tile list first (needed before it exists). Called: once at launch, on first appear if still
-    /// empty, and on every Media-tab EXIT to pre-roll fresh backdrops while off-screen.
+    /// empty, and on Media-tab EXIT when random images are enabled (to pre-roll fresh art off-screen).
     func prepareTileImages(reloadList: Bool) async {
         guard !isPreparingTiles else { return }
         isPreparingTiles = true
@@ -215,7 +215,7 @@ final class MediaViewModel: ViewModel {
         }
         tileImageSources = resolved
 
-        // Warm the freshly-resolved backdrops so the tiles don't download on-screen. Cancel any
+        // Warm the freshly-resolved images so the tiles don't download on-screen. Cancel any
         // still-queued downloads from the PREVIOUS re-roll first — those URLs were just replaced, so
         // finishing them is pure waste (the prefetcher is `.low` priority / 2-concurrent, so a stale
         // batch would otherwise sit in its queue ahead of the fresh one).
@@ -224,15 +224,51 @@ final class MediaViewModel: ViewModel {
         backdropPrefetcher.startPrefetching(with: urls)
     }
 
-    /// The backdrop source(s) for a single tile: a clean random backdrop for libraries/Favorites/
-    /// Watchlist; the Live TV view's own backdrop (or primary) for Live TV.
+    /// Prefer the library image configured in Jellyfin (Primary on the user view). Fall back to a
+    /// random content backdrop when the user enables "Random image", or when a tile has no library art
+    /// (Favorites / Watchlist). Live TV keeps its fixed bundled wallpaper.
     private func resolveImageSources(for mediaType: MediaType) async -> [ImageSource] {
         // Live TV now uses a FIXED bundled wallpaper (the `LiveTVPoster` asset, rendered directly by the tile),
         // so resolving/prefetching the server's Live TV backdrop here would be pure waste — return nothing.
         if case MediaType.liveTV = mediaType {
             return []
         }
+
+        let useRandomImage = Defaults[.Customization.Library.randomImage]
+
+        if !useRandomImage, let libraryImage = libraryAssociatedImageSources(for: mediaType) {
+            return libraryImage
+        }
+
         return await (try? randomItemImageSources(for: mediaType)) ?? []
+    }
+
+    /// Images Jellyfin associates with the library / user view itself (Dashboard → Libraries → Image).
+    private func libraryAssociatedImageSources(for mediaType: MediaType) -> [ImageSource]? {
+        let item: BaseItemDto?
+        switch mediaType {
+        case let .collectionFolder(folder):
+            item = folder
+        case let .liveTV(liveTV):
+            item = liveTV
+        case .downloads, .favorites, .watchlist:
+            return nil
+        }
+
+        guard let item else { return nil }
+
+        // Primary is what Jellyfin stores as the library image; thumb/backdrop are secondary options
+        // some admins set instead. Return only the first available source (not a rotation set).
+        let candidates: [ImageSource] = [
+            item.imageSource(.primary, maxWidth: 800),
+            item.imageSource(.thumb, maxWidth: 800),
+            item.imageSource(.backdrop, maxWidth: 800),
+        ]
+
+        if let first = candidates.first(where: { $0.url != nil }) {
+            return [first]
+        }
+        return nil
     }
 
     #endif

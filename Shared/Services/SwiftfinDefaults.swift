@@ -263,7 +263,9 @@ extension Defaults.Keys {
             }
 
             static var randomImage: Key<Bool> {
-                UserKey("libraryRandomImage", default: true)
+                // Default off: show each library's Jellyfin-associated Primary image on Media tiles.
+                // Users can still enable random content backdrops in Customize → Media.
+                UserKey("libraryRandomImage", default: false)
             }
 
             static var showFavorites: Key<Bool> {
