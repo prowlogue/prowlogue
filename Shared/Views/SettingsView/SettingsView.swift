@@ -99,6 +99,15 @@ struct SettingsView: View {
         }
 
         Section {
+            // Add another Jellyfin account on this saved server — after sign-in both users
+            // appear on the Select User screen (Settings → Switch User).
+            if let userSession = viewModel.userSession {
+                Button(L10n.addUser) {
+                    UIDevice.impact(.light)
+                    router.route(to: .userSignIn(server: userSession.server))
+                }
+            }
+
             Button(L10n.switchUser) {
                 UIDevice.impact(.medium)
                 viewModel.signOut()
